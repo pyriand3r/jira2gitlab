@@ -1,13 +1,13 @@
 {
-  "name": "@smallstack/jira2gitlab",
-  "version": "0.2.4",
+  "name": "@pyriand3r/jira2gitlab",
+  "version": "0.3",
   "description": "Imports Jira issues into gitlab projects",
   "repository": {
     "type": "git",
-    "url": "https://gitlab.com/smallstack/jira2gitlab.git"
+    "url": "https://github.com/pyriand3r/jira2gitlab"
   },
   "bugs": {
-    "url": "https://gitlab.com/smallstack/jira2gitlab/issues"
+    "url": "https://github.com/pyriand3r/jira2gitlab/issues"
   },
   "scripts": {
     "ci-publish": "ci-publish",
@@ -17,20 +17,30 @@
   "bin": {
     "jira2gitlab": "./bin/jira2gitlab"
   },
-  "author": "smallstack GmbH",
+  "contributors": [
+    {
+      "name": "smallstack GmbH",
+      "email": "contact@smallstack.io",
+      "url": "https://smallstack.io/"
+    },
+    {
+      "name": "Gabriel Jülke",
+      "email": "pyriand3r@gmail.com"
+    }
+  ],
   "license": "MIT",
   "dependencies": {
     "@smallstack/common": "^0.1.8",
-    "fs-extra": "^4.0.2",
-    "inquirer": "^3.2.3",
-    "jira-client": "^6.4.0",
-    "node-gitlab": "https://github.com/smallstack/gitlab.git",
-    "request": "^2.81.0",
-    "request-promise": "^4.2.1",
     "@types/node": "^8.0.31",
     "@types/request": "^2.0.3",
     "@types/request-promise": "^4.1.37",
     "ci-publish": "^1.3.0",
+    "fs-extra": "^4.0.2",
+    "inquirer": "^3.2.3",
+    "jira-client": "^6.4.0",
+    "node-gitlab": "^1.6.0",
+    "request": "^2.81.0",
+    "request-promise": "^4.2.1",
     "typescript": "2.5.2"
   }
 }
