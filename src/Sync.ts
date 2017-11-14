@@ -200,7 +200,7 @@ export class Sync {
                         if (typeof issue["fields.timespent"] === "number" && issue["fields.timespent"] > 0) {
                             try {
                                 console.log("adding worklog: " + issue["fields.timespent"]);
-                                await this.gitlabClient.issues.addTimeSpent({ id: gitlabIssue.project_id, issue_id: gitlabIssue.id, duration: issue["fields.timespent"] + "s" });
+                                await this.gitlabClient.issues.createNote({ id: gitlabIssue.project_id, issue_id: gitlabIssue.id, body: 'Apply spend time from jira.\n/spend ' + issue["fields.timespent"] + "s" });
                             } catch (e) {
                                 console.error("Adding worklog failed : ", e);
                             }
