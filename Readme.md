@@ -1,3 +1,9 @@
+# Disclaimer
+
+This is a fork of [smallstacks jira2gitlab](https://gitlab.com/smallstack/jira2gitlab). I have fixed some bugs and added additional behaviour
+
+---
+
 # Motivation
 We recently moved from Jira/Bitbucket to Gitlab. Since there was no importer for Jira Issues that supports (custom-)field mapping, we wrote this CLI tool.
 
@@ -17,14 +23,8 @@ We recently moved from Jira/Bitbucket to Gitlab. Since there was no importer for
 ## via source
 Clone the project and call `npm install -g`
 
-## via npm registry
-`npm install -g @smallstack/jira2gitlab`
-
-## as project dependency
-`npm install @smallstack/jira2gitlab --save`
-
 # How-to use
-You need an administrator account on Jira side and a private token that is allowed to modify project issues on gitlab's side. 
+You need an administrator account on Jira side and a private token that is allowed to modify project issues on gitlab's side.
 
 Create a config.json and add the following content: 
 
@@ -35,7 +35,8 @@ Create a config.json and add the following content:
         "username": "max",
         "password": "XXX",
         "projectKey": "CUPPY",
-        "strictSSL": true
+        "strictSSL": true,
+        "protocol": "http|https"
     },
     "gitlab": {
         "url": "https://gitlab.com",
