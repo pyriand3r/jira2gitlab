@@ -1,3 +1,5 @@
 node_modules/
 /src/**/*.js
 dist/
+.idea
+config.json
