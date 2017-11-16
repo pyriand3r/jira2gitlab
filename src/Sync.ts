@@ -186,7 +186,7 @@ export class Sync {
                         gitlabIssueJSON = Sync.resolveMappingMacros(jiraIssue, issueMapping, gitlabIssueJSON)
                     }
                     else {
-                        console.log("  => Value: " +  Sync.resolveAttribute(jiraIssue, issueMapping.jira));
+                        console.log("  => Value: " + Sync.resolveAttribute(jiraIssue, issueMapping.jira));
                         gitlabIssueJSON[issueMapping.gitlab] = Sync.resolveAttribute(jiraIssue, issueMapping.jira);
                     }
                 }
@@ -230,7 +230,7 @@ export class Sync {
                     }
                     if (createNewIssue) {
                         console.log("Creating new gitlab issue!");
-                            gitlabIssue = await this.gitlabClient.issues.create(gitlabIssueJSON);
+                        gitlabIssue = await this.gitlabClient.issues.create(gitlabIssueJSON);
                         // time spent and estimated
                         if (this.options.general.worklog === true
                             || this.options.general.estimatedTime === true) {
@@ -306,6 +306,8 @@ export class Sync {
     /**
      * @method resolveMappingMacros
      *
+     * Resolve the mapping macro defined in mapping rule
+     *
      * @param issue
      * @param issueMapping
      * @param gitlabIssueJSON
@@ -323,6 +325,9 @@ export class Sync {
     }
 
     /**
+     * @method resolveLabels
+     *
+     * Resolve labels from the defined jira field
      *
      * @param labels
      * @param issue
@@ -334,7 +339,12 @@ export class Sync {
         let attribute = Sync.resolveAttribute(issue, issueMapping.jira);
 
         if (Array.isArray(attribute)) {
-            newLabels += attribute.join(',');
+            if (typeof attribute[0] === 'object') {
+                newLabels = Sync.resolveObjectLabels(attribute, issueMapping);
+
+            } else {
+                newLabels = attribute.join(',');
+            }
         } else {
             newLabels += attribute;
         }
@@ -348,6 +358,9 @@ export class Sync {
 
     /**
      * @method resolveAttribute
+     *
+     * return the value of a defined jira mapping
+     *
      * @param issue
      * @param attribute
      * @returns {any}
@@ -363,5 +376,32 @@ export class Sync {
             }
         }
         return object;
+    }
+
+    /**
+     * @method resolveObjectLabels
+     *
+     * Resolve labels from array of objects
+     *
+     * @param attribute
+     * @param issueMapping
+     * @returns {string}
+     */
+    static resolveObjectLabels(attribute, issueMapping) {
+        let labels = '';
+
+        if (issueMapping.field === undefined) {
+            console.error('WARNING: skipping field mapping for ' + issueMapping.jira + ' since "field" isn\'t defined.');
+            return labels;
+        }
+        if (attribute[0][issueMapping.field] === undefined) {
+            console.error('WARNING: skipping field mapping for ' + issueMapping.jira + ' since field ' + issueMapping.field + 'isn\'t defined in objects.');
+            return labels;
+        }
+
+        for (let i = 0; i < attribute.length; i++) {
+            labels += attribute[i][issueMapping.field] + ',';
+        }
+        return labels.substr(0, labels.length - 1);
     }
 }
