@@ -1,19 +1,28 @@
 import * as JiraApi from "jira-client";
 import * as gitlab from "node-gitlab";
-import { Utils } from "@smallstack/common";
+import {Utils} from "@smallstack/common";
 import * as _ from "underscore";
 import * as request from "request-promise";
 
+/**
+ * @interface IssueMapping
+ */
 export interface IssueMapping {
     jira: string;
     gitlab: string;
 }
 
+/**
+ * @interface UserMapping
+ */
 export interface UserMapping {
     jiraMail: string;
     gitlabUsername: string;
 }
 
+/**
+ * @interface SyncOptions
+ */
 export interface SyncOptions {
     simulation: boolean,
     jira: {
@@ -38,8 +47,9 @@ export interface SyncOptions {
     };
 }
 
-
-
+/**
+ * @class Sync
+ */
 export class Sync {
 
     private gitlabProjectMembers: any[];
@@ -48,8 +58,20 @@ export class Sync {
     private jiraClient: any;
     private gitlabClient: any;
 
-    constructor(private options: SyncOptions) { }
+    /**
+     * @constructor
+     * @param {SyncOptions} options
+     */
+    constructor(private options: SyncOptions) {
+    }
 
+    /**
+     * @method doTheDance
+     * Perform the complete import
+     *
+     * @async
+     * @returns {Promise<void>}
+     */
     public async doTheDance(): Promise<void> {
         return new Promise<void>(async (resolve, reject) => {
             const protocol: string = this.options.jira.protocol ? this.options.jira.protocol : "https";
@@ -97,16 +119,19 @@ export class Sync {
 
             console.log(`Getting gitlab project ${this.options.gitlab.namespace}/${this.options.gitlab.projectName}`);
             const gitlabProjectId: string = this.options.gitlab.namespace + "%2F" + this.options.gitlab.projectName;
-            this.gitlabProject = await this.gitlabClient.projects.get({ id: gitlabProjectId });
+            this.gitlabProject = await this.gitlabClient.projects.get({id: gitlabProjectId});
             if (this.gitlabProject === undefined)
                 throw new Error("Could not find gitlab project " + this.options.gitlab.namespace + "/" + this.options.gitlab.projectName);
 
             console.log(`Getting gitlab project members...`);
-            this.gitlabProjectMembers = await this.gitlabClient.projectMembers.list({ id: this.gitlabProject.id });
+            this.gitlabProjectMembers = await this.gitlabClient.projectMembers.list({id: this.gitlabProject.id});
 
             console.log(`Getting gitlab namespace members...`);
             try {
-                const gitlabGroupMembers = await request.get(this.options.gitlab.url + "/api/v3/groups/" + this.options.gitlab.namespace + "/members", { headers: { "PRIVATE-TOKEN": this.options.gitlab.privateToken }, json: true });
+                const gitlabGroupMembers = await request.get(this.options.gitlab.url + "/api/v3/groups/" + this.options.gitlab.namespace + "/members", {
+                    headers: {"PRIVATE-TOKEN": this.options.gitlab.privateToken},
+                    json: true
+                });
                 this.gitlabProjectMembers = this.gitlabProjectMembers.concat(gitlabGroupMembers);
             } catch (e) {
                 console.log("Error: " + e.message);
@@ -119,7 +144,10 @@ export class Sync {
             let total: number;
             do {
                 console.log("Querying Jira, startAt:" + startAt + ", pageSize:" + maxResults);
-                const jiraIssues: any = await this.jiraClient.searchJira(`project=${this.options.jira.projectKey}`, { startAt, maxResults });
+                const jiraIssues: any = await this.jiraClient.searchJira(`project=${this.options.jira.projectKey}`, {
+                    startAt,
+                    maxResults
+                });
                 if (total === undefined) {
                     total = jiraIssues.total;
                     console.log("  => total size is " + total);
@@ -130,6 +158,13 @@ export class Sync {
         });
     }
 
+    /**
+     * @method matchIssues
+     *
+     * @async
+     * @param {any[]} jiraIssues
+     * @returns {Promise<void>}
+     */
     private async matchIssues(jiraIssues: any[]): Promise<void> {
         return new Promise<void>(async (resolve, reject) => {
             for (const jiraIssue of jiraIssues) {
@@ -203,27 +238,10 @@ export class Sync {
                         // time spent and estimated
                         if (this.options.general.worklog === true
                             || this.options.general.estimatedTime === true) {
-                            let note = 'Apply time entries from jira.';
-                            if (typeof issue["fields.timespent"] === "number"
-                                && issue["fields.timespent"] > 0
-                                && this.options.general.worklog === true) {
-                                console.log("adding worklog: " + issue["fields.timespent"]);
-                                note += '\n/spend ' + issue["fields.timespent"] + 's';
-                            }
-                            if (typeof issue['fields.timeestimate'] === 'number'
-                                && issue['fields.timeestimate'] > 0
-                                && this.options.general.estimatedTime === true) {
-                                console.log('adding estimated time: ' + issue['fields.timeestimate']);
-                                note += '\n/estimate ' + issue['fields.timeestimate'] + 's';
-                            }
-                                try {
-                                    await this.gitlabClient.issues.createNote({ id: gitlabIssue.project_id, issue_id: gitlabIssue.id, body: note });
-                                } catch (e) {
-                                    console.error("Adding worklog and/or estimated time failed : ", e);
-                                }
+                            this.applyTimeLog(issue, gitlabIssue);
                         }
                         // updating jira issue with gitlab issueID
-                        const jiraUpdate: any = { fields: {} };
+                        const jiraUpdate: any = {fields: {}};
                         jiraUpdate.fields[this.gitlabJiraField.id] = "" + gitlabIssue.id;
                         console.log("Updating jira issue with ", jiraUpdate);
                         await this.jiraClient.updateIssue(jiraIssue.id, jiraUpdate);
@@ -232,14 +250,50 @@ export class Sync {
                     // resolution available?
                     if (issue["fields.resolution"] !== null) {
                         console.log("setting to closed...");
-                        await this.gitlabClient.issues.update({ id: gitlabIssue.project_id, issue_id: gitlabIssue.id, state_event: "close" });
+                        await this.gitlabClient.issues.update({
+                            id: gitlabIssue.project_id,
+                            issue_id: gitlabIssue.id,
+                            state_event: "close"
+                        });
                     }
-
 
 
                 }
             }
             resolve();
         });
+    }
+
+    /**
+     * @method
+     * Apply worklog and estimated time
+     *
+     * @param issue
+     * @param gitlabIssue
+     * @async
+     */
+    private async applyTimeLog(issue, gitlabIssue) {
+        let note = 'Apply time entries from jira.';
+        if (typeof issue["fields.timespent"] === "number"
+            && issue["fields.timespent"] > 0
+            && this.options.general.worklog === true) {
+            console.log("adding worklog: " + issue["fields.timespent"]);
+            note += '\n/spend ' + issue["fields.timespent"] + 's';
+        }
+        if (typeof issue['fields.timeestimate'] === 'number'
+            && issue['fields.timeestimate'] > 0
+            && this.options.general.estimatedTime === true) {
+            console.log('adding estimated time: ' + issue['fields.timeestimate']);
+            note += '\n/estimate ' + issue['fields.timeestimate'] + 's';
+        }
+        try {
+            await this.gitlabClient.issues.createNote({
+                id: gitlabIssue.project_id,
+                issue_id: gitlabIssue.id,
+                body: note
+            });
+        } catch (e) {
+            console.error("Adding worklog and/or estimated time failed : ", e);
+        }
     }
 }
