@@ -169,7 +169,7 @@ export class Sync {
         return new Promise<void>(async (resolve, reject) => {
             for (const jiraIssue of jiraIssues) {
                 const issue: any = Utils.flattenJSON(jiraIssue);
-                const gitlabIssueJSON: any = {};
+                let gitlabIssueJSON: any = {};
                 console.log("Syncing issue: " + issue.key);
                 for (const issueMapping of this.options.issueMapping) {
                     if (issue[issueMapping.jira] === undefined) {
@@ -178,17 +178,7 @@ export class Sync {
                     }
                     console.log(`Jira -> ${issueMapping.jira} to Gitlab -> ${issueMapping.gitlab}`);
                     if (issueMapping.gitlab.startsWith("$")) {
-                        switch (issueMapping.gitlab) {
-                            case "$asLabel":
-                                if (gitlabIssueJSON.labels === undefined)
-                                    gitlabIssueJSON.labels = issue[issueMapping.jira];
-                                else
-                                    gitlabIssueJSON.labels += "," + issue[issueMapping.jira];
-                                console.log("  => New Label: " + issue[issueMapping.jira]);
-                                break;
-                            default:
-                                throw new Error("Unknown operator: " + issueMapping.gitlab);
-                        }
+                        gitlabIssueJSON = Sync.resolveMappingMacros(issue, issueMapping, gitlabIssueJSON)
                     }
                     else {
                         console.log("  => Value: " + issue[issueMapping.jira]);
@@ -295,5 +285,40 @@ export class Sync {
         } catch (e) {
             console.error("Adding worklog and/or estimated time failed : ", e);
         }
+    }
+
+    /**
+     * @method resolveMappingMacros
+     *
+     * @param issue
+     * @param issueMapping
+     * @param gitlabIssueJSON
+     * @returns {any}
+     */
+    static resolveMappingMacros(issue, issueMapping, gitlabIssueJSON) {
+        switch (issueMapping.gitlab) {
+            case "$asLabel":
+                gitlabIssueJSON.labels = Sync.resolveLabels(gitlabIssueJSON.labels, issue, issueMapping);
+                break;
+            default:
+                throw new Error("Unknown operator: " + issueMapping.gitlab);
+        }
+        return gitlabIssueJSON;
+    }
+
+    /**
+     *
+     * @param labels
+     * @param issue
+     * @param issueMapping
+     * @returns {any}
+     */
+    static resolveLabels(labels, issue, issueMapping) {
+        if (labels === undefined)
+            labels = issue[issueMapping.jira];
+        else
+            labels += "," + issue[issueMapping.jira];
+        console.log("  => New Label: " + issue[issueMapping.jira]);
+        return labels;
     }
 }
