@@ -1,6 +1,5 @@
 import * as JiraApi from "jira-client";
 import * as gitlab from "node-gitlab";
-import {Utils} from "@smallstack/common";
 import * as _ from "underscore";
 import * as request from "request-promise";
 
@@ -168,21 +167,20 @@ export class Sync {
     private async matchIssues(jiraIssues: any[]): Promise<void> {
         return new Promise<void>(async (resolve, reject) => {
             for (const jiraIssue of jiraIssues) {
-                const issue: any = Utils.flattenJSON(jiraIssue);
                 let gitlabIssueJSON: any = {};
-                console.log("Syncing issue: " + issue.key);
+                console.log("Syncing issue: " + jiraIssue.key);
                 for (const issueMapping of this.options.issueMapping) {
-                    if (issue[issueMapping.jira] === undefined) {
+                    if (Sync.resolveAttribute(jiraIssue, issueMapping.jira) === undefined) {
                         console.warn("WARNING: skipping field mapping for '" + issueMapping.jira + "' since it doesn't exist on jira issue...");
                         continue;
                     }
                     console.log(`Jira -> ${issueMapping.jira} to Gitlab -> ${issueMapping.gitlab}`);
                     if (issueMapping.gitlab.startsWith("$")) {
-                        gitlabIssueJSON = Sync.resolveMappingMacros(issue, issueMapping, gitlabIssueJSON)
+                        gitlabIssueJSON = Sync.resolveMappingMacros(jiraIssue, issueMapping, gitlabIssueJSON)
                     }
                     else {
-                        console.log("  => Value: " + issue[issueMapping.jira]);
-                        gitlabIssueJSON[issueMapping.gitlab] = issue[issueMapping.jira];
+                        console.log("  => Value: " +  Sync.resolveAttribute(jiraIssue, issueMapping.jira));
+                        gitlabIssueJSON[issueMapping.gitlab] = Sync.resolveAttribute(jiraIssue, issueMapping.jira);
                     }
                 }
 
@@ -210,25 +208,26 @@ export class Sync {
                     let gitlabIssue: any;
                     let createNewIssue: boolean = true;
 
-                    if (issue["fields." + this.gitlabJiraField.id] !== null) {
-                        console.log("Updating gitlab issue " + issue["fields." + this.gitlabJiraField.id]);
-                        gitlabIssueJSON.issue_id = issue["fields." + this.gitlabJiraField.id];
+                    let syncField = Sync.resolveAttribute(jiraIssue, "fields." + this.gitlabJiraField.id);
+                    if (syncField !== null) {
+                        console.log("Updating gitlab issue " + syncField);
+                        gitlabIssueJSON.issue_id = syncField;
                         try {
                             gitlabIssue = await this.gitlabClient.issues.update(_.clone(gitlabIssueJSON));
                             createNewIssue = false;
                         } catch (e) {
-                            console.log("The Gitlab issue, which was referenced on the Jira issue (#" + issue["fields." + this.gitlabJiraField.id] + "), could not be found, creating / linking new one!");
+                            console.log("The Gitlab issue, which was referenced on the Jira issue (#" + syncField + "), could not be found, creating / linking new one!");
                             gitlabIssueJSON.issue_id = undefined;
                         }
 
                     }
                     if (createNewIssue) {
                         console.log("Creating new gitlab issue!");
-                        gitlabIssue = await this.gitlabClient.issues.create(gitlabIssueJSON);
+                            gitlabIssue = await this.gitlabClient.issues.create(gitlabIssueJSON);
                         // time spent and estimated
                         if (this.options.general.worklog === true
                             || this.options.general.estimatedTime === true) {
-                            this.applyTimeLog(issue, gitlabIssue);
+                            this.applyTimeLog(jiraIssue, gitlabIssue);
                         }
                         // updating jira issue with gitlab issueID
                         const jiraUpdate: any = {fields: {}};
@@ -238,7 +237,7 @@ export class Sync {
                     }
 
                     // resolution available?
-                    if (issue["fields.resolution"] !== null) {
+                    if (jiraIssue.fields.resolution !== null) {
                         console.log("setting to closed...");
                         await this.gitlabClient.issues.update({
                             id: gitlabIssue.project_id,
@@ -264,17 +263,17 @@ export class Sync {
      */
     private async applyTimeLog(issue, gitlabIssue) {
         let note = 'Apply time entries from jira.';
-        if (typeof issue["fields.timespent"] === "number"
-            && issue["fields.timespent"] > 0
+        if (typeof issue.fields.timespent === "number"
+            && issue.fields.timespent > 0
             && this.options.general.worklog === true) {
-            console.log("adding worklog: " + issue["fields.timespent"]);
-            note += '\n/spend ' + issue["fields.timespent"] + 's';
+            console.log("adding worklog: " + issue.fields.timespent);
+            note += '\n/spend ' + issue.fields.timespent + 's';
         }
-        if (typeof issue['fields.timeestimate'] === 'number'
-            && issue['fields.timeestimate'] > 0
+        if (typeof issue.fields.timeestimate === 'number'
+            && issue.fields.timeestimate > 0
             && this.options.general.estimatedTime === true) {
-            console.log('adding estimated time: ' + issue['fields.timeestimate']);
-            note += '\n/estimate ' + issue['fields.timeestimate'] + 's';
+            console.log('adding estimated time: ' + issue.fields.timeestimate);
+            note += '\n/estimate ' + issue.fields.timeestimate + 's';
         }
         try {
             await this.gitlabClient.issues.createNote({
@@ -314,11 +313,38 @@ export class Sync {
      * @returns {any}
      */
     static resolveLabels(labels, issue, issueMapping) {
+        let newLabels = '';
+        let attribute = Sync.resolveAttribute(issue, issueMapping.jira);
+
+        if (Array.isArray(attribute)) {
+            newLabels += attribute.join(',');
+        } else {
+            newLabels += attribute;
+        }
         if (labels === undefined)
-            labels = issue[issueMapping.jira];
+            labels = newLabels;
         else
-            labels += "," + issue[issueMapping.jira];
-        console.log("  => New Label: " + issue[issueMapping.jira]);
+            labels += "," + newLabels;
+        console.log("  => New Label(s): " + newLabels);
         return labels;
+    }
+
+    /**
+     * @method resolveAttribute
+     * @param issue
+     * @param attribute
+     * @returns {any}
+     */
+    static resolveAttribute(issue, attribute) {
+        let fieldArray = attribute.split('.');
+        let object = issue;
+        for (let i = 0; i < fieldArray.length; i++) {
+            if (object[fieldArray[i]] !== 'undefined') {
+                object = object[fieldArray[i]];
+            } else {
+                console.log("WARNING: skipping field mapping for '" + attribute + "' since it doesn't exist on jira issue...")
+            }
+        }
+        return object;
     }
 }
