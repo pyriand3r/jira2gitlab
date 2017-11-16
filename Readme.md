@@ -10,7 +10,7 @@ We recently moved from Jira/Bitbucket to Gitlab. Since there was no importer for
 ## Current Features
 - Syncs issues based on configuration
 - Re-Sync works via custom jira field that stores the Gitlab issue ID
-- Jira worklogs get added once on gitlab issue creation
+- Jira worklogs get added once on gitlab issue creation (optional)
 - Jira (custom-) fields can be mapped to Gitlab fields
 - Jira users can be mapped to Gitlab users
 - If a jira resolution exists, the issue will be closed on Gitlab
@@ -43,6 +43,9 @@ Create a config.json and add the following content:
         "privateToken": "XXX",
         "namespace": "smallstack",
         "projectName": "cuppy"
+    },
+    "general": {
+        "worklog": true
     },
     "issueMapping": [
         {

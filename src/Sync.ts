@@ -32,6 +32,9 @@ export interface SyncOptions {
     };
     issueMapping: IssueMapping[];
     userMapping: UserMapping[];
+    general: {
+        worklog: boolean;
+    };
 }
 
 
@@ -197,12 +200,20 @@ export class Sync {
                         console.log("Creating new gitlab issue!");
                         gitlabIssue = await this.gitlabClient.issues.create(gitlabIssueJSON);
                         // time spent
-                        if (typeof issue["fields.timespent"] === "number" && issue["fields.timespent"] > 0) {
-                            try {
+                        if (this.options.general.worklog === true) {
+                            let createNote = false;
+                            let note = 'Apply spend time from jira.';
+                            if (typeof issue["fields.timespent"] === "number" && issue["fields.timespent"] > 0) {
+                                createNote = true;
                                 console.log("adding worklog: " + issue["fields.timespent"]);
-                                await this.gitlabClient.issues.createNote({ id: gitlabIssue.project_id, issue_id: gitlabIssue.id, body: 'Apply spend time from jira.\n/spend ' + issue["fields.timespent"] + "s" });
-                            } catch (e) {
-                                console.error("Adding worklog failed : ", e);
+                                note += '\n/spend ' + issue["fields.timespent"] + 's';
+                            }
+                            if (createNote === true) {
+                                try {
+                                    await this.gitlabClient.issues.createNote({ id: gitlabIssue.project_id, issue_id: gitlabIssue.id, body: note });
+                                } catch (e) {
+                                    console.error("Adding worklog failed : ", e);
+                                }
                             }
                         }
                         // updating jira issue with gitlab issueID
