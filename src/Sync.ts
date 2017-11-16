@@ -34,6 +34,7 @@ export interface SyncOptions {
     userMapping: UserMapping[];
     general: {
         worklog: boolean;
+        estimatedTime: boolean;
     };
 }
 
@@ -199,22 +200,27 @@ export class Sync {
                     if (createNewIssue) {
                         console.log("Creating new gitlab issue!");
                         gitlabIssue = await this.gitlabClient.issues.create(gitlabIssueJSON);
-                        // time spent
-                        if (this.options.general.worklog === true) {
-                            let createNote = false;
-                            let note = 'Apply spend time from jira.';
-                            if (typeof issue["fields.timespent"] === "number" && issue["fields.timespent"] > 0) {
-                                createNote = true;
+                        // time spent and estimated
+                        if (this.options.general.worklog === true
+                            || this.options.general.estimatedTime === true) {
+                            let note = 'Apply time entries from jira.';
+                            if (typeof issue["fields.timespent"] === "number"
+                                && issue["fields.timespent"] > 0
+                                && this.options.general.worklog === true) {
                                 console.log("adding worklog: " + issue["fields.timespent"]);
                                 note += '\n/spend ' + issue["fields.timespent"] + 's';
                             }
-                            if (createNote === true) {
+                            if (typeof issue['fields.timeestimate'] === 'number'
+                                && issue['fields.timeestimate'] > 0
+                                && this.options.general.estimatedTime === true) {
+                                console.log('adding estimated time: ' + issue['fields.timeestimate']);
+                                note += '\n/estimate ' + issue['fields.timeestimate'] + 's';
+                            }
                                 try {
                                     await this.gitlabClient.issues.createNote({ id: gitlabIssue.project_id, issue_id: gitlabIssue.id, body: note });
                                 } catch (e) {
-                                    console.error("Adding worklog failed : ", e);
+                                    console.error("Adding worklog and/or estimated time failed : ", e);
                                 }
-                            }
                         }
                         // updating jira issue with gitlab issueID
                         const jiraUpdate: any = { fields: {} };
