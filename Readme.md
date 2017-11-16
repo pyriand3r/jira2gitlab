@@ -8,13 +8,20 @@ This is a fork of [smallstacks jira2gitlab](https://gitlab.com/smallstack/jira2g
 We recently moved from Jira/Bitbucket to Gitlab. Since there was no importer for Jira Issues that supports (custom-)field mapping, we wrote this CLI tool.
 
 ## Current Features
+
+### Basic
+
 - Syncs issues based on configuration
 - Re-Sync works via custom jira field that stores the Gitlab issue ID
-- Jira worklogs get added once on gitlab issue creation (optional)
-- Jira estimated time get added to gitlab issue (optional)
 - Jira (custom-) fields can be mapped to Gitlab fields
 - Jira users can be mapped to Gitlab users
 - If a jira resolution exists, the issue will be closed on Gitlab
+
+### Optional
+
+- Jira worklogs get added once on gitlab issue creation
+- Jira estimated time get added to gitlab issue
+- Backlink to original issue as comment
 
 ## Things to know
 - The CLI creates a new custom field in Jira called 'jira2gitlab' where it stores the gitlab issue ID. This custom field is automatically added to the 'default screen' of Jira.
@@ -47,7 +54,8 @@ Create a config.json and add the following content:
     },
     "general": {
         "worklog": true,
-        "estimatedTime": true
+        "estimatedTime": true,
+        "backlink": true
     },
     "issueMapping": [
         {

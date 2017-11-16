@@ -43,6 +43,7 @@ export interface SyncOptions {
     general: {
         worklog: boolean;
         estimatedTime: boolean;
+        backlink: boolean;
     };
 }
 
@@ -56,12 +57,18 @@ export class Sync {
     private gitlabJiraField: any;
     private jiraClient: any;
     private gitlabClient: any;
+    private baseLink: string;
 
     /**
      * @constructor
      * @param {SyncOptions} options
      */
     constructor(private options: SyncOptions) {
+        let proto = this.options.jira.protocol ? this.options.jira.protocol : "https";
+        this.baseLink = proto + '://' + options.jira.host;
+        if (this.baseLink.endsWith('/')) {
+            this.baseLink = this.baseLink.substring(0, this.baseLink.length - 1);
+        }
     }
 
     /**
@@ -229,6 +236,18 @@ export class Sync {
                             || this.options.general.estimatedTime === true) {
                             this.applyTimeLog(jiraIssue, gitlabIssue);
                         }
+                        // adding backlink as comment
+                        if (this.options.general.backlink === true) {
+                            try {
+                                await this.gitlabClient.issues.createNote({
+                                    id: gitlabIssue.project_id,
+                                    issue_id: gitlabIssue.id,
+                                    body: 'Imported from jira. Original issue: ' + this.baseLink + '/browse/' + jiraIssue.key
+                                });
+                            } catch (e) {
+                                console.error("Adding of backlink as comment failed: ", e);
+                            }
+                        }
                         // updating jira issue with gitlab issueID
                         const jiraUpdate: any = {fields: {}};
                         jiraUpdate.fields[this.gitlabJiraField.id] = "" + gitlabIssue.id;
@@ -245,8 +264,6 @@ export class Sync {
                             state_event: "close"
                         });
                     }
-
-
                 }
             }
             resolve();
