@@ -9,6 +9,10 @@ import * as request from "request-promise";
 export interface IssueMapping {
     jira: string;
     gitlab: string;
+    field: string;
+    filter: [
+        string
+        ]
 }
 
 /**
@@ -45,6 +49,7 @@ export interface SyncOptions {
         estimatedTime: boolean;
         backlink: boolean;
         asOriginalAuthor: boolean;
+        comments: boolean;
     };
 }
 
@@ -194,19 +199,10 @@ export class Sync {
 
                 // assignee
                 if (jiraIssue.fields.assignee) {
-                    const jiraMail: string = jiraIssue.fields.assignee.emailAddress;
-                    console.log("Mapping jira assignee " + jiraMail);
-                    const userMapping: UserMapping = _.find(this.options.userMapping, (um) => um.jiraMail === jiraMail);
-                    if (!userMapping)
-                        console.warn("WARNING: No userMapping found for jira user " + jiraMail);
-                    else {
-                        const gitlabUser: any = _.find(this.gitlabProjectMembers, (gitlabProjectMember) => gitlabProjectMember.username === userMapping.gitlabUsername);
-                        if (gitlabUser) {
-                            gitlabIssueJSON.assignee_id = gitlabUser.id;
-                            console.log("  => Found assigneeId " + gitlabUser.id);
-                        }
-                        else
-                            console.warn("WARNING: Could not find gitlab user " + userMapping.gitlabUsername + " in gitlab project!!!");
+                    console.log("Mapping jira assignee " + jiraIssue.fields.assignee.emailAddress);
+                    let gitlabUser = this.jira2gitlabUser(jiraIssue.fields.assignee.emailAddress);
+                    if (gitlabUser !== false) {
+                        gitlabIssueJSON.assignee_id = gitlabUser.id;
                     }
                 }
 
@@ -214,16 +210,10 @@ export class Sync {
                 if (!this.options.simulation) {
 
                     if (this.options.general.asOriginalAuthor === true) {
-                        const jiraMail: string = jiraIssue.fields.creator.emailAddress;
-                        console.log("Mapping jira creator " + jiraMail);
-                        const userMapping: UserMapping = _.find(this.options.userMapping, (um) => um.jiraMail === jiraMail);
-                        if (!userMapping) {
-                            console.warn("WARNING: No userMapping found for jira user " + jiraMail);
-                        } else {
-                            const gitlabUser: any = _.find(this.gitlabProjectMembers, (gitlabProjectMember) => gitlabProjectMember.username === userMapping.gitlabUsername);
-                            if (gitlabUser) {
-                                this.gitlabClient.addHeader('SUDO', gitlabUser.username)
-                            }
+                        console.log("Mapping jira author " + jiraIssue.fields.creator.emailAddress);
+                        let gitlabUser = this.jira2gitlabUser(jiraIssue.fields.creator.emailAddress);
+                        if (gitlabUser !== false) {
+                            this.gitlabClient.addHeader('SUDO', gitlabUser.username)
                         }
                     }
 
@@ -264,6 +254,29 @@ export class Sync {
                             } catch (e) {
                                 console.error("Adding of backlink as comment failed: ", e);
                             }
+                        }
+
+                        // adding commens if needed
+                        if (this.options.general.comments === true) {
+                            let issue: any = await this.jiraClient.findIssue(jiraIssue.id);
+                            for (let i = 0; i < issue.fields.comment.comments.length; i++) {
+                                let comment = issue.fields.comment.comments[i];
+                                let author = this.jira2gitlabUser(comment.author.emailAddress);
+                                if (author !== false) {
+                                    this.gitlabClient.addHeader('SUDO', author.username);
+                                }
+                                try {
+                                    console.log('  => Applying comment');
+                                    await this.gitlabClient.issues.createNote({
+                                        id: gitlabIssue.project_id,
+                                        issue_id: gitlabIssue.id,
+                                        body: comment.body
+                                    });
+                                } catch (e) {
+                                    console.error('ERROR: Applying of comment failed: ', e);
+                                }
+                            }
+                            this.gitlabClient.removeHeader('SUDO');
                         }
                         // updating jira issue with gitlab issueID
                         const jiraUpdate: any = {fields: {}};
@@ -352,24 +365,29 @@ export class Sync {
      * @returns {any}
      */
     static resolveLabels(labels, issue, issueMapping) {
-        let newLabels = '';
+        let newLabels = [];
         let attribute = Sync.resolveAttribute(issue, issueMapping.jira);
 
         if (Array.isArray(attribute)) {
             if (typeof attribute[0] === 'object') {
-                newLabels = Sync.resolveObjectLabels(attribute, issueMapping);
-
-            } else {
-                newLabels = attribute.join(',');
+                attribute = Sync.resolveObjectLabels(attribute, issueMapping);
             }
+            newLabels = attribute;
         } else {
-            newLabels += attribute;
+            newLabels.push(attribute);
         }
+
+        if (issueMapping.ignore !== undefined) {
+            newLabels = Sync.filterLabels(newLabels, issueMapping.ignore);
+        }
+
+        let labelString = newLabels.join(',');
+
         if (labels === undefined)
-            labels = newLabels;
+            labels = labelString;
         else
-            labels += "," + newLabels;
-        console.log("  => New Label(s): " + newLabels);
+            labels += "," + labelString;
+        console.log("  => New Label(s): " + labelString);
         return labels;
     }
 
@@ -405,7 +423,7 @@ export class Sync {
      * @returns {string}
      */
     static resolveObjectLabels(attribute, issueMapping) {
-        let labels = '';
+        let labels = [];
 
         if (issueMapping.field === undefined) {
             console.error('WARNING: skipping field mapping for ' + issueMapping.jira + ' since "field" isn\'t defined.');
@@ -417,8 +435,54 @@ export class Sync {
         }
 
         for (let i = 0; i < attribute.length; i++) {
-            labels += attribute[i][issueMapping.field] + ',';
+            labels.push(attribute[i][issueMapping.field]);
         }
-        return labels.substr(0, labels.length - 1);
+        return labels;
+    }
+
+    /**
+     * @method mapUser
+     * Maps a jira user to a gitlab user and returns the gitlab user object or false if mapping was not successful
+     *
+     * @param jiraMail The email of the jira user to map
+     * @return {{}}|false The found gitlab user or false
+     */
+    private jira2gitlabUser(jiraMail) {
+        let userMapping: UserMapping = _.find(this.options.userMapping, (um) => um.jiraMail === jiraMail);
+        if (!userMapping) {
+            console.warn("WARNING: No userMapping found for jira user " + jiraMail);
+        } else {
+            let gitlabUser: any = _.find(this.gitlabProjectMembers, (gitlabProjectMember) => gitlabProjectMember.username === userMapping.gitlabUsername);
+            if (gitlabUser) {
+                console.log("  => Found assigneeId " + gitlabUser.id);
+                return gitlabUser;
+            } else {
+                console.warn("WARNING: Could not find gitlab user " + userMapping.gitlabUsername + " in gitlab project!!!");
+            }
+        }
+        return false;
+    }
+
+    static filterLabels(newLabels, ignore: any) {
+        let regs = [];
+        ignore.forEach(function (value) {
+            regs.push(new RegExp(value));
+        });
+
+        newLabels.forEach(function (value, index) {
+            let remove = false;
+            for (let i = 0; i < regs.length; i++) {
+                if (regs[i].test(value) === true) {
+                    remove = true;
+                    break;
+                }
+            }
+            if (remove === true) {
+                console.log('  => ignoring label ' + value);
+                newLabels.splice(index, 1)
+            }
+        });
+
+        return newLabels;
     }
 }
