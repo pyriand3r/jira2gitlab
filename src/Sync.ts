@@ -44,6 +44,7 @@ export interface SyncOptions {
         worklog: boolean;
         estimatedTime: boolean;
         backlink: boolean;
+        asOriginalAuthor: boolean;
     };
 }
 
@@ -212,6 +213,20 @@ export class Sync {
                 gitlabIssueJSON.id = this.gitlabProject.id;
                 if (!this.options.simulation) {
 
+                    if (this.options.general.asOriginalAuthor === true) {
+                        const jiraMail: string = jiraIssue.fields.creator.emailAddress;
+                        console.log("Mapping jira creator " + jiraMail);
+                        const userMapping: UserMapping = _.find(this.options.userMapping, (um) => um.jiraMail === jiraMail);
+                        if (!userMapping) {
+                            console.warn("WARNING: No userMapping found for jira user " + jiraMail);
+                        } else {
+                            const gitlabUser: any = _.find(this.gitlabProjectMembers, (gitlabProjectMember) => gitlabProjectMember.username === userMapping.gitlabUsername);
+                            if (gitlabUser) {
+                                this.gitlabClient.addHeader('SUDO', gitlabUser.username)
+                            }
+                        }
+                    }
+
                     let gitlabIssue: any;
                     let createNewIssue: boolean = true;
 
@@ -221,6 +236,7 @@ export class Sync {
                         gitlabIssueJSON.issue_id = syncField;
                         try {
                             gitlabIssue = await this.gitlabClient.issues.update(_.clone(gitlabIssueJSON));
+                            this.gitlabClient.removeHeader('SUDO');
                             createNewIssue = false;
                         } catch (e) {
                             console.log("The Gitlab issue, which was referenced on the Jira issue (#" + syncField + "), could not be found, creating / linking new one!");
@@ -231,6 +247,7 @@ export class Sync {
                     if (createNewIssue) {
                         console.log("Creating new gitlab issue!");
                         gitlabIssue = await this.gitlabClient.issues.create(gitlabIssueJSON);
+                        this.gitlabClient.removeHeader('SUDO');
                         // time spent and estimated
                         if (this.options.general.worklog === true
                             || this.options.general.estimatedTime === true) {

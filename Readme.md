@@ -26,8 +26,7 @@ mapping, we wrote this CLI tool.
 - Jira worklogs get added once on gitlab issue creation
 - Jira estimated time get added to gitlab issue
 - Backlink to original issue as comment
-
-# Field Mapping
+- Add issues as the original author if mapped (defined gitlab user needs to have administration permissions)
 
 ## simple
 
@@ -103,7 +102,8 @@ Create a config.json and add the following content:
     "general": {
         "worklog": true,
         "estimatedTime": true,
-        "backlink": true
+        "backlink": true,
+        "asOriginalAuthor": true
     },
     "issueMapping": [
         {
