@@ -30,7 +30,6 @@
   ],
   "license": "MIT",
   "dependencies": {
-    "@smallstack/common": "^0.1.8",
     "@types/node": "^8.0.31",
     "@types/request": "^2.0.3",
     "@types/request-promise": "^4.1.37",
@@ -38,9 +37,10 @@
     "fs-extra": "^4.0.2",
     "inquirer": "^3.2.3",
     "jira-client": "^6.4.0",
-    "node-gitlab": "^1.6.0",
+    "node-gitlab": "https://github.com/pyriand3r/gitlab.git",
     "request": "^2.81.0",
     "request-promise": "^4.2.1",
-    "typescript": "2.5.2"
+    "typescript": "2.5.2",
+    "underscore": "^1.8.3"
   }
 }
