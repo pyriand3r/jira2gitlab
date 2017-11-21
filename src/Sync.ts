@@ -2,6 +2,9 @@ import * as JiraApi from "jira-client";
 import * as gitlab from "node-gitlab";
 import * as _ from "underscore";
 import * as request from "request-promise";
+import * as path from 'path';
+import {execSync} from 'child_process';
+import * as fs from 'fs';
 
 /**
  * @interface IssueMapping
@@ -50,6 +53,7 @@ export interface SyncOptions {
         backlink: boolean;
         asOriginalAuthor: boolean;
         comments: boolean;
+        attachments: boolean;
     };
 }
 
@@ -179,7 +183,8 @@ export class Sync {
      */
     private async matchIssues(jiraIssues: any[]): Promise<void> {
         return new Promise<void>(async (resolve, reject) => {
-            for (const jiraIssue of jiraIssues) {
+            for (const issue of jiraIssues) {
+                let jiraIssue: any = await this.jiraClient.findIssue(issue.id);
                 let gitlabIssueJSON: any = {};
                 console.log("Syncing issue: " + jiraIssue.key);
                 for (const issueMapping of this.options.issueMapping) {
@@ -245,6 +250,7 @@ export class Sync {
                         }
                         // adding backlink as comment
                         if (this.options.general.backlink === true) {
+                            console.log('  => Applying backlink to jira');
                             try {
                                 await this.gitlabClient.issues.createNote({
                                     id: gitlabIssue.project_id,
@@ -252,21 +258,53 @@ export class Sync {
                                     body: 'Imported from jira. Original issue: ' + this.baseLink + '/browse/' + jiraIssue.key
                                 });
                             } catch (e) {
-                                console.error("Adding of backlink as comment failed: ", e);
+                                console.error("ERROR: Adding of backlink as comment failed: ", e);
                             }
                         }
 
-                        // adding commens if needed
+                        let attachments = [];
+                        if (this.options.general.attachments === true) {
+                            console.log('  => Applying attachments');
+                            attachments = await this.applyAttachments(jiraIssue, gitlabIssue);
+                        }
+
+                        // If there are attachments add a comment containing them all
+                        // Necessary if there are attachments not referenced in a comment
+                        if (attachments.length > 0) {
+                            console.log('  => Adding comment with all attachments.');
+                            let body = 'Attachments applied from jira ticket:';
+
+                            for (let item in attachments) {
+                                if (attachments.hasOwnProperty(item)) {
+                                    body += '<br/>' + attachments[item].markdown;
+                                }
+                            }
+                            try {
+                                await this.gitlabClient.issues.createNote({
+                                    id: gitlabIssue.project_id,
+                                    issue_id: gitlabIssue.id,
+                                    body: body
+                                })
+                            } catch (err) {
+                                console.error('ERROR: Attachment comment could not be set.', err)
+                            }
+                        }
+
+                        // adding comments if needed
                         if (this.options.general.comments === true) {
-                            let issue: any = await this.jiraClient.findIssue(jiraIssue.id);
-                            for (let i = 0; i < issue.fields.comment.comments.length; i++) {
-                                let comment = issue.fields.comment.comments[i];
+                            console.log('  => adding ' + jiraIssue.fields.comment.comments.length + ' comments');
+                            for (let i = 0; i < jiraIssue.fields.comment.comments.length; i++) {
+                                let comment = jiraIssue.fields.comment.comments[i];
                                 let author = this.jira2gitlabUser(comment.author.emailAddress);
                                 if (author !== false) {
                                     this.gitlabClient.addHeader('SUDO', author.username);
                                 }
+
+                                if (attachments.length > 0) {
+                                    comment.body = this.replaceAttachmentLinks(comment.body, attachments);
+                                }
+
                                 try {
-                                    console.log('  => Applying comment');
                                     await this.gitlabClient.issues.createNote({
                                         id: gitlabIssue.project_id,
                                         issue_id: gitlabIssue.id,
@@ -278,6 +316,7 @@ export class Sync {
                             }
                             this.gitlabClient.removeHeader('SUDO');
                         }
+
                         // updating jira issue with gitlab issueID
                         const jiraUpdate: any = {fields: {}};
                         jiraUpdate.fields[this.gitlabJiraField.id] = "" + gitlabIssue.id;
@@ -463,6 +502,14 @@ export class Sync {
         return false;
     }
 
+    /**
+     * @method filterLabels
+     * Remove labels based on the filters provided in the matching rule
+     *
+     * @param {string[]} newLabels Array of new labels
+     * @param {string[]} ignore Array of regex strings defining the labels to remove
+     * @returns {string[]}
+     */
     static filterLabels(newLabels, ignore: any) {
         let regs = [];
         ignore.forEach(function (value) {
@@ -484,5 +531,92 @@ export class Sync {
         });
 
         return newLabels;
+    }
+
+    /**
+     * @method applyAttachments
+     * Upload attachments from the jira issue to gitlab and return an array of gitlab infos to the uploaded attachments
+     *
+     * @param jiraIssue
+     * @param gitlabIssue
+     * @returns {}[]
+     */
+    private async applyAttachments(jiraIssue, gitlabIssue) {
+        let data = [];
+        let tmpPath = path.resolve(__dirname, '../tmp/');
+        if (!fs.existsSync(tmpPath)) {
+            fs.mkdirSync(tmpPath)
+        }
+        let header = 'Authorization: Basic ' + new Buffer(this.options.jira.username + ':' + this.options.jira.password).toString('base64');
+        let count = jiraIssue.fields.attachment.length;
+        for (let i = 0; i < jiraIssue.fields.attachment.length; i++) {
+            let item = jiraIssue.fields.attachment[i];
+            try {
+                let command = 'curl -D- -X GET -H "' +
+                    header +
+                    '" -H "Content-Type: application/json" "http://jira.devnet.sectornord.com/secure/attachment/' +
+                    item.id + '/' + item.filename + '" --output "' + tmpPath + '/' + item.filename + '"';
+                execSync(command);
+            } catch (err) {
+                console.error('ERROR: Attachment could not be downloaded.', err);
+                count--;
+                continue;
+            }
+            try {
+                let sendCommand = 'curl --request POST --header "PRIVATE-TOKEN: ' +
+                    this.options.gitlab.privateToken + '" --form "file=@' + tmpPath + '/' +
+                    item.filename + '" ' + this.options.gitlab.url + '/api/v3/projects/' + gitlabIssue.project_id + '/uploads';
+                let response = execSync(sendCommand);
+                let fileData = JSON.parse(response.toString('utf8'));
+                fileData.name = item.filename;
+                data.push(fileData);
+            } catch (err) {
+                console.error('ERROR: Attachment could not be uploaded.', err)
+            }
+            count--;
+        }
+
+        while (count > 0) {}
+
+        try {
+            execSync('rm ' + tmpPath + '/*');
+        } catch (err) {
+            console.warn('WARNING: Cleaning of local attachment copies failed. Please remove them manually from ' + tmpPath);
+        }
+
+        console.log('  => Applied ' + jiraIssue.fields.attachment.length + ' attachments');
+        return data;
+    }
+
+    /**
+     * @method replaceAttachmentLinks
+     * Replace all jira attachment links with the corresponding gitlab attachment links
+     *
+     * @param {string} comment The comment body
+     * @param {{}[]} attachments The array of attachments
+     * @returns {string}
+     */
+    private replaceAttachmentLinks(comment, attachments) {
+
+        // Return the link to the gitlab attachment
+        let replaceLinks = function(match, p1, p2, offset, string) {
+            let name = p2;
+            if (p1 !== undefined) {
+                name = p1.replace('|thumbnail', '');
+            }
+            for (let i = 0; i < attachments.length; i++) {
+                if (attachments[i].name === name) {
+                    return attachments[i].markdown;
+                }
+            }
+            return name + '|unavailable'
+        };
+
+        //replace attachment links
+        let reg = /!(.*?)!|\[\^(.*)]?]/g;
+        if (reg.test(comment)) {
+            comment = comment.replace(reg, replaceLinks);
+        }
+        return comment;
     }
 }
