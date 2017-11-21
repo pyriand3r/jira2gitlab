@@ -15,7 +15,8 @@ export interface IssueMapping {
     field: string;
     filter: [
         string
-        ]
+        ],
+    prefix: string;
 }
 
 /**
@@ -418,6 +419,12 @@ export class Sync {
 
         if (issueMapping.ignore !== undefined) {
             newLabels = Sync.filterLabels(newLabels, issueMapping.ignore);
+        }
+
+        if (issueMapping.prefix !== undefined) {
+            for (let i = 0; i < newLabels.length; i++) {
+                newLabels[i] = issueMapping.prefix + newLabels[i];
+            }
         }
 
         let labelString = newLabels.join(',');
