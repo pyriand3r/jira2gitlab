@@ -27,6 +27,10 @@ mapping, we wrote this CLI tool.
 - Jira estimated time get added to gitlab issue
 - Backlink to original issue as comment
 - Add issues as the original author if mapped (defined gitlab user needs to have administration permissions)
+- When importing $asLabel you can define filter regexes to clean up the imported labels from the mapping rule.
+- When importing $asLabel you can define a prefix that is added to all labels from the mapping rule
+- Import attachments
+- Import comments (as the original user)
 
 ## simple
 
@@ -53,9 +57,6 @@ You can simply add mappings containing a `jira` and a `gitlab` attribute.
 To import jira fields as labels you can use the special macro `$asLabel`. If the defined jira field is an array of 
 simple types like in `fields.labels` all entries are imported as labels.
 
-If you want to import fields that contain an array of objects (for example the `fields.components` array), you can define
-the object field to import as label through the `field`-attribute inside the mapping rule:
-
 ```json
 {
     "jira": "fields.components",
@@ -63,6 +64,21 @@ the object field to import as label through the `field`-attribute inside the map
     "field": "name"
 }
 ```
+
+### Options
+
+#### field (string)
+
+If you want to import fields that contain an array of objects (for example the `fields.components` array), you can define
+the object field to import as label through the `field`-attribute
+
+#### ignore (string[])
+
+Define a list of regex strings. All labels from that rule matching one of the regexes will not be imported.
+
+#### prefix (string)
+
+Define a prefix. All labels created from that mapping rule will have this prefix.
 
 ## Things to know
 
