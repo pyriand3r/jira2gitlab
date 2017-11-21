@@ -15,7 +15,6 @@ mapping, we wrote this CLI tool.
 ### Basic
 
 - Syncs issues based on configuration
-- Re-Sync works via custom jira field that stores the Gitlab issue ID
 - Jira (custom-)fields can be mapped to Gitlab fields
 - Jira users can be mapped to Gitlab users
 - If a jira resolution exists, the issue will be closed on Gitlab
@@ -23,6 +22,7 @@ mapping, we wrote this CLI tool.
 
 ### Optional
 
+- Re-Sync works via custom jira field that stores the Gitlab issue ID
 - Jira worklogs get added once on gitlab issue creation
 - Jira estimated time get added to gitlab issue
 - Backlink to original issue as comment

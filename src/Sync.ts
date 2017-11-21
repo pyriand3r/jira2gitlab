@@ -55,6 +55,7 @@ export interface SyncOptions {
         asOriginalAuthor: boolean;
         comments: boolean;
         attachments: boolean;
+        syncField: boolean;
     };
 }
 
@@ -105,29 +106,32 @@ export class Sync {
             });
 
             // create jira custom field for syncing already created issues
-            const jiraFields = await this.jiraClient.listFields();
-            const customJiraFieldName: string = "jira2gitlab";
-            this.gitlabJiraField = _.find(jiraFields, (jiraField) => jiraField.name === customJiraFieldName);
+            if (this.options.general.syncField === true) {
+                const jiraFields = await this.jiraClient.listFields();
+                const customJiraFieldName: string = "jira2gitlab";
+                this.gitlabJiraField = _.find(jiraFields, (jiraField) => jiraField.name === customJiraFieldName);
 
 
-            if (this.gitlabJiraField === undefined) {
-                console.log("Creating custom jira field : " + customJiraFieldName);
-                if (!this.options.simulation) {
-                    this.gitlabJiraField = await this.jiraClient.createCustomField({
-                        "name": customJiraFieldName,
-                        "description": "Custom field for keeping track of already synced issues",
-                        "type": "com.atlassian.jira.plugin.system.customfieldtypes:textfield"
-                    });
-                    await request({
-                        url: protocol + "://" + this.options.jira.host + "/rest/api/2/screens/addToDefault/" + this.gitlabJiraField.id,
-                        method: "post",
-                        auth: {
-                            username: this.options.jira.username,
-                            password: this.options.jira.password
-                        }
-                    });
+                if (this.gitlabJiraField === undefined) {
+                    console.log("Creating custom jira field : " + customJiraFieldName);
+                    if (!this.options.simulation) {
+                        this.gitlabJiraField = await this.jiraClient.createCustomField({
+                            "name": customJiraFieldName,
+                            "description": "Custom field for keeping track of already synced issues",
+                            "type": "com.atlassian.jira.plugin.system.customfieldtypes:textfield"
+                        });
+                        await request({
+                            url: protocol + "://" + this.options.jira.host + "/rest/api/2/screens/addToDefault/" + this.gitlabJiraField.id,
+                            method: "post",
+                            auth: {
+                                username: this.options.jira.username,
+                                password: this.options.jira.password
+                            }
+                        });
+                    }
                 }
             }
+
 
             this.gitlabClient = gitlab.createPromise({
                 api: `${this.options.gitlab.url}/api/v3`,
@@ -226,19 +230,21 @@ export class Sync {
                     let gitlabIssue: any;
                     let createNewIssue: boolean = true;
 
-                    let syncField = Sync.resolveAttribute(jiraIssue, "fields." + this.gitlabJiraField.id);
-                    if (syncField !== null) {
-                        console.log("Updating gitlab issue " + syncField);
-                        gitlabIssueJSON.issue_id = syncField;
-                        try {
-                            gitlabIssue = await this.gitlabClient.issues.update(_.clone(gitlabIssueJSON));
-                            this.gitlabClient.removeHeader('SUDO');
-                            createNewIssue = false;
-                        } catch (e) {
-                            console.log("The Gitlab issue, which was referenced on the Jira issue (#" + syncField + "), could not be found, creating / linking new one!");
-                            gitlabIssueJSON.issue_id = undefined;
-                        }
+                    if (this.options.general.syncField === true) {
+                        let syncField = Sync.resolveAttribute(jiraIssue, "fields." + this.gitlabJiraField.id);
+                        if (syncField !== null) {
+                            console.log("Updating gitlab issue " + syncField);
+                            gitlabIssueJSON.issue_id = syncField;
+                            try {
+                                gitlabIssue = await this.gitlabClient.issues.update(_.clone(gitlabIssueJSON));
+                                this.gitlabClient.removeHeader('SUDO');
+                                createNewIssue = false;
+                            } catch (e) {
+                                console.log("The Gitlab issue, which was referenced on the Jira issue (#" + syncField + "), could not be found, creating / linking new one!");
+                                gitlabIssueJSON.issue_id = undefined;
+                            }
 
+                        }
                     }
                     if (createNewIssue) {
                         console.log("Creating new gitlab issue!");
@@ -318,11 +324,13 @@ export class Sync {
                             this.gitlabClient.removeHeader('SUDO');
                         }
 
-                        // updating jira issue with gitlab issueID
-                        const jiraUpdate: any = {fields: {}};
-                        jiraUpdate.fields[this.gitlabJiraField.id] = "" + gitlabIssue.id;
-                        console.log("Updating jira issue with ", jiraUpdate);
-                        await this.jiraClient.updateIssue(jiraIssue.id, jiraUpdate);
+                        if (this.options.general.syncField === true) {
+                            // updating jira issue with gitlab issueID
+                            const jiraUpdate: any = {fields: {}};
+                            jiraUpdate.fields[this.gitlabJiraField.id] = "" + gitlabIssue.id;
+                            console.log("Updating jira issue with ", jiraUpdate);
+                            await this.jiraClient.updateIssue(jiraIssue.id, jiraUpdate);
+                        }
                     }
 
                     // resolution available?
