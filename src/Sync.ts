@@ -429,6 +429,12 @@ export class Sync {
             newLabels = Sync.filterLabels(newLabels, issueMapping.ignore);
         }
 
+        newLabels.forEach(function (value, index) {
+            if (value === null || value === undefined || value === "null" || value === "undefined") {
+                newLabels.splice(index, 1);
+            }
+        })
+
         if (issueMapping.prefix !== undefined) {
             for (let i = 0; i < newLabels.length; i++) {
                 newLabels[i] = issueMapping.prefix + newLabels[i];
