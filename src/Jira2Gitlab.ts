@@ -1,8 +1,7 @@
-// import { prompt, Answers } from "inquirer";
-import { Sync } from "./Sync";
+import {Sync} from "./Sync";
 import * as fs from "fs-extra";
 import * as _ from "underscore";
-// import * as path from "path";
+import * as winston from "winston";
 
 export async function CLI() {
 
@@ -12,27 +11,21 @@ export async function CLI() {
         throw new Error("File does not exist: " + configFilePath);
     const configuration: any = fs.readJsonSync(configFilePath);
 
+    if (configuration.logger.toFile === true && configuration.logger.file !== undefined) {
+        winston.add(winston.transports.File, {filename: configuration.logger.file});
+    }
+
     // parse arguments
     process.argv.splice(0, 2);
     _.each(process.argv, function (arg) {
         if (arg === "--simulate") {
             configuration.simulation = true;
-            console.log("=> Simulating all actions!!!")
+            winston.info("=> Simulating all actions!!!")
         }
     });
 
-
-    // const answers: Answers = await prompt([
-    //     {
-    //         type: "password",
-    //         name: "gitlabPassword",
-    //         message: "Jira Password"
-    //     }
-    // ]);
-
-
     await new Sync(configuration).doTheDance().catch((error: Error) => {
-        console.log("Error: " + error);
-        console.log(error.stack);
+        winston.error("Error: " + error);
+        winston.error(error.stack);
     });
 }
