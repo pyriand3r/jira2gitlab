@@ -247,6 +247,10 @@ export class Sync {
                         }
                     }
 
+                    if ('description' in gitlabIssueJSON) {
+                        gitlabIssueJSON.description = Sync.transformSyntax(gitlabIssueJSON.description);
+                    }
+
                     let gitlabIssue: any;
                     let createNewIssue: boolean = true;
 
@@ -335,7 +339,7 @@ export class Sync {
                                     await this.gitlabClient.issues.createNote({
                                         id: gitlabIssue.project_id,
                                         issue_id: gitlabIssue.id,
-                                        body: comment.body
+                                        body: Sync.transformSyntax(comment.body)
                                     });
                                 } catch (e) {
                                     winston.error('ERROR: Applying of comment failed: ', e);
@@ -349,18 +353,27 @@ export class Sync {
                             const jiraUpdate: any = {fields: {}};
                             jiraUpdate.fields[this.gitlabJiraField.id] = "" + gitlabIssue.id;
                             winston.info("Updating jira issue with ", jiraUpdate);
-                            await this.jiraClient.updateIssue(jiraIssue.id, jiraUpdate);
+                            try {
+                                await this.jiraClient.updateIssue(jiraIssue.id, jiraUpdate);
+                            } catch {
+                                winston.error('Could not update jira issue!');
+                            }
                         }
                     }
 
                     // resolution available?
                     if (jiraIssue.fields.resolution !== null) {
                         winston.info("setting to closed...");
-                        await this.gitlabClient.issues.update({
-                            id: gitlabIssue.project_id,
-                            issue_id: gitlabIssue.id,
-                            state_event: "close"
-                        });
+                        try {
+                            await this.gitlabClient.issues.update({
+                                id: gitlabIssue.project_id,
+                                issue_id: gitlabIssue.id,
+                                state_event: "close"
+                            });
+                        } catch (err) {
+                            winston.error('ERROR: Could not close the issue!');
+                        }
+
                     }
                 }
             }
@@ -557,19 +570,20 @@ export class Sync {
             regs.push(new RegExp(value));
         });
 
-        newLabels.forEach(function (value, index) {
+        for (let i = 0; i < newLabels.length; i++) {
             let remove = false;
-            for (let i = 0; i < regs.length; i++) {
-                if (regs[i].test(value) === true) {
+            for (let j = 0; j < regs.length; j++) {
+                if (regs[j].test(newLabels[i]) === true) {
                     remove = true;
                     break;
                 }
             }
             if (remove === true) {
-                winston.info('  => ignoring label ' + value);
-                newLabels.splice(index, 1)
+                winston.info('  => ignoring label ' + newLabels[i]);
+                newLabels.splice(i, 1);
+                i--;
             }
-        });
+        }
 
         return newLabels;
     }
@@ -659,5 +673,24 @@ export class Sync {
             comment = comment.replace(reg, replaceLinks);
         }
         return comment;
+    }
+
+    /**
+     * @method transformSyntax
+     * Transforms the jira syntax to gitlab syntax
+     * @param {string} text The jira text to parse
+     * @returns {string} The parsed text with gitlab syntax
+     */
+    static transformSyntax(text) {
+        text = text
+            .replace(/\*([^\s].*?[^\s])\*/g, '\*\*$1\*\*')
+            .replace(/_([^\s].*?[^\s])_/g, '\*$1\*')
+            .replace(/\/([^\s].*?[^\s])\//g, '_$1_')
+            .replace(/-([^\s].*?[^\s])-/g, '~~$1~~')
+            .replace(/\+([^\s].*?[^\s])\+/g, '$1')
+            .replace(/\[~(.*?)\]/g, '@$1')
+            .replace(/{code:(.*?)}([\s\S]*?){code}/g, '```$1\n$2\n```')
+            .replace(/{color:.*?}([^\s].*?[^\s]){color}/g, '$1');
+        return text;
     }
 }
