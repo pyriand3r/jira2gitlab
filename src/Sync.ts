@@ -144,12 +144,26 @@ export class Sync {
             if (this.gitlabProject === undefined)
                 throw new Error("Could not find gitlab project " + this.options.gitlab.namespace + "/" + this.options.gitlab.projectName);
 
+
             console.log(`Getting gitlab project members...`);
             this.gitlabProjectMembers = await this.gitlabClient.projectMembers.list({id: this.gitlabProject.id});
 
+            console.log('Getting gitlab project shared groups members...');
+            for (let i = 0; i < this.gitlabProject.shared_with_groups.length; i++) {
+                try {
+                    const groupMembers = await request.get(this.options.gitlab.url + "/api/v3/groups/" + this.gitlabProject.shared_with_groups[i].group_id + "/members", {
+                        headers: {"PRIVATE-TOKEN": this.options.gitlab.privateToken},
+                        json: true
+                    });
+                    this.gitlabProjectMembers = this.gitlabProjectMembers.concat(groupMembers);
+                } catch (err) {
+                    console.error('ERROR: ' + e.message);
+                }
+            }
+
             console.log(`Getting gitlab namespace members...`);
             try {
-                const gitlabGroupMembers = await request.get(this.options.gitlab.url + "/api/v3/groups/" + this.options.gitlab.namespace + "/members", {
+                const gitlabGroupMembers = await request.get(this.options.gitlab.url + "/api/v3/groups/" + this.gitlabProject.namespace.id + "/members", {
                     headers: {"PRIVATE-TOKEN": this.options.gitlab.privateToken},
                     json: true
                 });
