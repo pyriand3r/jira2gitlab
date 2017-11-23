@@ -51,6 +51,7 @@ export interface SyncOptions {
         privateToken?: string;
         namespace: string;
         projectName: string;
+        timeout: number;
     };
     issueMapping: IssueMapping[];
     userMapping: UserMapping[];
@@ -138,11 +139,17 @@ export class Sync {
                 }
             }
 
-
-            this.gitlabClient = gitlab.createPromise({
+            let options = {
                 api: `${this.options.gitlab.url}/api/v3`,
-                privateToken: this.options.gitlab.privateToken
-            });
+                privateToken: this.options.gitlab.privateToken,
+                requestTimeout: 5000
+            };
+            
+            if (this.options.gitlab.timeout !== undefined) {
+                options.requestTimeout = this.options.gitlab.timeout
+            }
+
+            this.gitlabClient = gitlab.createPromise(options);
 
             winston.info(`Getting gitlab project ${this.options.gitlab.namespace}/${this.options.gitlab.projectName}`);
             const gitlabProjectId: string = this.options.gitlab.namespace + "%2F" + this.options.gitlab.projectName;
@@ -209,6 +216,7 @@ export class Sync {
     private async matchIssues(jiraIssues: any[]): Promise<void> {
         return new Promise<void>(async (resolve) => {
             for (const issue of jiraIssues) {
+                winston.info('########################################');
                 let jiraIssue: any = await this.jiraClient.findIssue(issue.id);
                 let gitlabIssueJSON: any = {};
                 winston.info("Syncing issue: " + jiraIssue.key);
@@ -247,7 +255,7 @@ export class Sync {
                         }
                     }
 
-                    if ('description' in gitlabIssueJSON) {
+                    if ('description' in gitlabIssueJSON && gitlabIssueJSON.description !== null) {
                         gitlabIssueJSON.description = Sync.transformSyntax(gitlabIssueJSON.description);
                     }
 
@@ -678,6 +686,7 @@ export class Sync {
     /**
      * @method transformSyntax
      * Transforms the jira syntax to gitlab syntax
+     *
      * @param {string} text The jira text to parse
      * @returns {string} The parsed text with gitlab syntax
      */
