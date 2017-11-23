@@ -63,6 +63,14 @@ export interface SyncOptions {
         comments: boolean;
         attachments: boolean;
         syncField: boolean;
+        ignoreIssues: {
+            closed: boolean;
+            date: boolean;
+            dateConfig: {
+                date: string;
+                type: string;
+            }
+        }
     };
 }
 
@@ -144,7 +152,7 @@ export class Sync {
                 privateToken: this.options.gitlab.privateToken,
                 requestTimeout: 5000
             };
-            
+
             if (this.options.gitlab.timeout !== undefined) {
                 options.requestTimeout = this.options.gitlab.timeout
             }
@@ -218,6 +226,12 @@ export class Sync {
             for (const issue of jiraIssues) {
                 winston.info('########################################');
                 let jiraIssue: any = await this.jiraClient.findIssue(issue.id);
+
+                if (this.options.general.ignoreIssues !== undefined && this.checkIgnoreIssue(jiraIssue) === true) {
+                    winston.info('Ignoring issue due to filter settings in ignoreIssues field');
+                    continue;
+                }
+
                 let gitlabIssueJSON: any = {};
                 winston.info("Syncing issue: " + jiraIssue.key);
                 for (const issueMapping of this.options.issueMapping) {
@@ -701,5 +715,28 @@ export class Sync {
             .replace(/{code:(.*?)}([\s\S]*?){code}/g, '```$1\n$2\n```')
             .replace(/{color:.*?}([^\s].*?[^\s]){color}/g, '$1');
         return text;
+    }
+
+    /**
+     * @method checkIgnoreIssue
+     * Checks if the issue should not be imported due to defined filter settings
+     *
+     * @param jiraIssue The jira issue data
+     * @returns {boolean}
+     */
+    private checkIgnoreIssue(jiraIssue) {
+        if (this.options.general.ignoreIssues.closed === true && jiraIssue.fields.resolution !== null) {
+            return true;
+        }
+
+        if (this.options.general.ignoreIssues.date === true) {
+            let before = new Date(this.options.general.ignoreIssues.dateConfig.date);
+            let date = new Date(jiraIssue.fields[this.options.general.ignoreIssues.dateConfig.type]);
+            if (date < before) {
+                return true;
+            }
+        }
+
+        return false;
     }
 }
