@@ -269,7 +269,14 @@ export class Sync {
                         }
                     }
 
+                    let attachments = [];
+                    if (this.options.general.attachments === true) {
+                        winston.info('  => Applying attachments');
+                        attachments = await this.applyAttachments(jiraIssue, this.gitlabProject.id);
+                    }
+
                     if ('description' in gitlabIssueJSON && gitlabIssueJSON.description !== null) {
+                        gitlabIssueJSON.description = Sync.replaceAttachmentLinks(gitlabIssueJSON.description, attachments);
                         gitlabIssueJSON.description = Sync.transformSyntax(gitlabIssueJSON.description);
                     }
 
@@ -313,12 +320,6 @@ export class Sync {
                             } catch (e) {
                                 winston.error("ERROR: Adding of backlink as comment failed: ", e);
                             }
-                        }
-
-                        let attachments = [];
-                        if (this.options.general.attachments === true) {
-                            winston.info('  => Applying attachments');
-                            attachments = await this.applyAttachments(jiraIssue, gitlabIssue);
                         }
 
                         // If there are attachments add a comment containing them all
@@ -519,10 +520,11 @@ export class Sync {
         let fieldArray = attribute.split('.');
         let object = issue;
         for (let i = 0; i < fieldArray.length; i++) {
-            if (object[fieldArray[i]] !== 'undefined') {
+            if (object[fieldArray[i]] !== undefined && object[fieldArray[i]] !== null ) {
                 object = object[fieldArray[i]];
             } else {
-                winston.info("WARNING: skipping field mapping for '" + attribute + "' since it doesn't exist on jira issue...")
+                winston.info("WARNING: skipping field mapping for '" + attribute + "' since it doesn't exist on jira issue...");
+                return undefined;
             }
         }
         return object;
@@ -615,10 +617,10 @@ export class Sync {
      * Upload attachments from the jira issue to gitlab and return an array of gitlab infos to the uploaded attachments
      *
      * @param jiraIssue
-     * @param gitlabIssue
+     * @param gitlabProjectId
      * @returns {}[]
      */
-    private async applyAttachments(jiraIssue, gitlabIssue) {
+    private async applyAttachments(jiraIssue, gitlabProjectId) {
         let data = [];
         let tmpPath = path.resolve(__dirname, '../tmp/');
         if (!fs.existsSync(tmpPath)) {
@@ -642,7 +644,7 @@ export class Sync {
             try {
                 let sendCommand = 'curl --request POST --header "PRIVATE-TOKEN: ' +
                     this.options.gitlab.privateToken + '" --form "file=@' + tmpPath + '/' +
-                    item.filename + '" ' + this.options.gitlab.url + '/api/v3/projects/' + gitlabIssue.project_id + '/uploads';
+                    item.filename + '" ' + this.options.gitlab.url + '/api/v3/projects/' + gitlabProjectId + '/uploads';
                 let response = execSync(sendCommand);
                 let fileData = JSON.parse(response.toString('utf8'));
                 fileData.name = item.filename;
