@@ -11,9 +11,20 @@ export async function CLI() {
         throw new Error("File does not exist: " + configFilePath);
     const configuration: any = fs.readJsonSync(configFilePath);
 
+    let transports = [
+        new (winston.transports.Console)({ level: configuration.logger.level })
+    ];
+
     if (configuration.logger.toFile === true && configuration.logger.file !== undefined) {
-        winston.add(winston.transports.File, {filename: configuration.logger.file});
+        transports.push(new (winston.transports.File)({
+            filename: configuration.logger.file,
+            level: configuration.logger.level
+        }));
     }
+
+    winston.configure({
+        transports: transports
+    });
 
     // parse arguments
     process.argv.splice(0, 2);
