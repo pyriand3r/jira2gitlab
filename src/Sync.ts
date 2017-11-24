@@ -164,7 +164,7 @@ export class Sync {
             this.gitlabProject = await this.gitlabClient.projects.get({id: gitlabProjectId});
             if (this.gitlabProject === undefined)
                 throw new Error("Could not find gitlab project " + this.options.gitlab.namespace + "/" + this.options.gitlab.projectName);
-
+            winston.debug(JSON.stringify(this.gitlabProject));
 
             winston.info(`Getting gitlab project members...`);
             this.gitlabProjectMembers = await this.gitlabClient.projectMembers.list({id: this.gitlabProject.id});
@@ -193,6 +193,7 @@ export class Sync {
                 winston.info("Error: " + e.message);
             }
 
+            winston.debug(JSON.stringify(this.gitlabProjectMembers));
             winston.info(`Matching issues...`);
 
             let startAt: number = 0;
@@ -224,7 +225,7 @@ export class Sync {
     private async matchIssues(jiraIssues: any[]): Promise<void> {
         return new Promise<void>(async (resolve) => {
             for (const issue of jiraIssues) {
-                winston.info('########################################');
+                winston.debug('########################################');
                 let jiraIssue: any = await this.jiraClient.findIssue(issue.id);
 
                 if (this.options.general.ignoreIssues !== undefined && this.checkIgnoreIssue(jiraIssue) === true) {
@@ -232,7 +233,9 @@ export class Sync {
                     continue;
                 }
 
-                let gitlabIssueJSON: any = {};
+                let gitlabIssueJSON: any = {
+                    labels: new Set()
+                };
                 winston.info("Syncing issue: " + jiraIssue.key);
                 for (const issueMapping of this.options.issueMapping) {
                     if (Sync.resolveAttribute(jiraIssue, issueMapping.jira) === undefined) {
@@ -283,6 +286,8 @@ export class Sync {
                     let gitlabIssue: any;
                     let createNewIssue: boolean = true;
 
+                    gitlabIssueJSON.labels = Array.from(gitlabIssueJSON.labels).join(',');
+
                     if (this.options.general.syncField === true) {
                         let syncField = Sync.resolveAttribute(jiraIssue, "fields." + this.gitlabJiraField.id);
                         if (syncField !== null) {
@@ -293,14 +298,15 @@ export class Sync {
                                 this.gitlabClient.removeHeader('SUDO');
                                 createNewIssue = false;
                             } catch (e) {
-                                winston.info("The Gitlab issue, which was referenced on the Jira issue (#" + syncField + "), could not be found, creating / linking new one!");
-                                gitlabIssueJSON.issue_id = undefined;
+                                winston.warn("WARNING: The Gitlab issue, which was referenced on the Jira issue (#" + syncField + "), could not be found, creating / linking new one!");
+                                delete gitlabIssueJSON.issue_id;
                             }
 
                         }
                     }
                     if (createNewIssue) {
                         winston.info("Creating new gitlab issue!");
+                        winston.debug(JSON.stringify(gitlabIssueJSON));
                         gitlabIssue = await this.gitlabClient.issues.create(gitlabIssueJSON);
                         this.gitlabClient.removeHeader('SUDO');
                         // time spent and estimated
@@ -463,7 +469,7 @@ export class Sync {
      *
      * Resolve labels from the defined jira field
      *
-     * @param labels
+     * @param {Set} labels
      * @param issue
      * @param issueMapping
      * @returns {any}
@@ -497,13 +503,11 @@ export class Sync {
             }
         }
 
-        let labelString = newLabels.join(',');
+        newLabels.forEach(function(value) {
+            labels.add(value);
+        });
 
-        if (labels === undefined)
-            labels = labelString;
-        else
-            labels += "," + labelString;
-        winston.info("  => New Label(s): " + labelString);
+        winston.info("  => New Label(s): " + newLabels.join(','));
         return labels;
     }
 
