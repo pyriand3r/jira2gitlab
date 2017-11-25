@@ -1,16 +1,18 @@
 # Disclaimer
 
-This is a fork of [smallstacks jira2gitlab](https://gitlab.com/smallstack/jira2gitlab). I have fixed some bugs and added 
-additional behaviour
+This is a fork of [smallstacks jira2gitlab](https://gitlab.com/smallstack/jira2gitlab). I have fixed a bug and added (tons of) additional features and imports.
 
 ---
 
 # Motivation
 
-We recently moved from Jira/Bitbucket to Gitlab. Since there was no importer for Jira Issues that supports (custom-)field 
-mapping, we wrote this CLI tool.
+We recently moved from Jira/Bitbucket to Gitlab and needed our tickets. I found smallstacks neat script but it did too less, so i extended it and made most of the features optional so everyone can decide how and what to import.
 
-## Current Features
+## Features
+
+With this tool you can transfer issues from jira to gitlab on a project base. It maps one jira project to a gitlab project.
+
+IMPORTANT: For the user mapping the gitlab users need access to the target gitlab project. 
 
 ### Basic
 
@@ -31,54 +33,7 @@ mapping, we wrote this CLI tool.
 - When importing $asLabel you can define a prefix that is added to all labels from the mapping rule
 - Import attachments
 - Import comments (as the original user)
-
-## simple
-
-Basically nearly any jira issue field containing a single value (string, integer, float, boolean) can be imported to a 
-gitlab issue field.
-You can simply add mappings containing a `jira` and a `gitlab` attribute.
-
-```json
-"issueMapping": [
-    {
-        "jira": "fields.summary",
-        "gitlab": "title"
-    },
-    {
-        "jira": "fields.description",
-        "gitlab": "description"
-    }
-]
-
-```
-
-## $asLabel
-
-To import jira fields as labels you can use the special macro `$asLabel`. If the defined jira field is an array of 
-simple types like in `fields.labels` all entries are imported as labels.
-
-```json
-{
-    "jira": "fields.components",
-    "gitlab": "$asLabel",
-    "field": "name"
-}
-```
-
-### Options
-
-#### field (string)
-
-If you want to import fields that contain an array of objects (for example the `fields.components` array), you can define
-the object field to import as label through the `field`-attribute
-
-#### ignore (string[])
-
-Define a list of regex strings. All labels from that rule matching one of the regexes will not be imported.
-
-#### prefix (string)
-
-Define a prefix. All labels created from that mapping rule will have this prefix.
+- ignore issues on state (closed) or date (created/updated)
 
 ## Things to know
 
@@ -86,23 +41,29 @@ Define a prefix. All labels created from that mapping rule will have this prefix
 is automatically added to the 'default screen' of Jira.
 - We imply that, after syncing an issue from Jira to Gitlab, the issue is being processed further on Gitlab only. 
 This is currently only relevant for the timespent field (which will not get updated again on a re-sync)
+- You need an administrator account on Jira side and a private token that is allowed to modify project issues on gitlab's side.
 
-# How-to install
- 
-## via source
+# Install
 
-Clone the project and call `npm install -g`
+```bash
+git clone https://github.com/pyriand3r/jira2gitlab.git
+cd jira2gitlab
+npm install
+```
 
-# How-to use
-
-You need an administrator account on Jira side and a private token that is allowed to modify project issues on gitlab's side.
+# Quick-start
 
 Create a config.json and add the following content: 
 
 ```json
 {
+    "logger": {
+        "level": "info",
+        "toFile": true,
+        "file": "jira2gitlab.log"
+    },
     "jira": {
-        "host": "jira.smallstack.io",
+        "host": "your.jira.com",
         "username": "max",
         "password": "XXX",
         "projectKey": "CUPPY",
@@ -112,14 +73,25 @@ Create a config.json and add the following content:
     "gitlab": {
         "url": "https://gitlab.com",
         "privateToken": "XXX",
-        "namespace": "smallstack",
+        "namespace": "example",
         "projectName": "cuppy"
     },
     "general": {
         "worklog": true,
         "estimatedTime": true,
         "backlink": true,
-        "asOriginalAuthor": true
+        "asOriginalAuthor": true,
+        "comments": true,
+        "attachments": true,
+        "syncField": true,
+        "ignoreIssues": {
+            "closed": false,
+            "date": false,
+            "dateConfig": {
+                "date": "2016-12-31",
+                "type": "created|updated"
+            }
+        }
     },
     "issueMapping": [
         {
@@ -153,3 +125,69 @@ Afterwards you can call the CLI in this folder via:
 ```bash
 $ jira2gitlab
 ```
+
+# Options
+
+## logger
+
+The progress is logged to the console but if you want you can write the log to a file, too.
+
+**level** {string} Defines the log level. default should be `info` but if you want more or less output you can use `debug`, `warning` or `error`, too.
+
+**toFile** {bool} Write the log to a file, too.
+
+**file** {string} The path to the file to write the log to.
+
+## jira
+
+Defines your jira instance aka the source and login information. I think everything is self-explaining.
+
+## gitlab
+
+Defines your gitlab instance aka the target. Again self-explaining I would say.
+
+## general
+
+Here you can activate/deactivate general apply rules
+
+**worklog** {bool} Wether or not the worklog should be applied.
+
+**estimatedTime** {bool} Wether or not the estimated time should be applied.
+
+INFO: worklog and estimated time are added through a new comment.
+
+**backlink** {bool} If true a backlink to the original jira issue will be added as a new comment.
+
+**asOriginalAuthor** {bool} If true the issue and all comments are applied as the original author if a user mapping is found. If false everything is created as the provided gitlab admininstration user.
+
+**comments** {bool} If true the commments will be applied, too.
+
+**attachments** {bool} Wether or not the attachments should be applied. If true all attachments are transfered, a new comment with all attachments is created and the attachments links in the description and the comments are replaced.
+
+**syncField** {bool} By default the script will create a custom field in jira containing the corresponding gitlab issue id. On a second run the gitlab issue gets updated.  
+
+For testing purposes this value should be set to `false` to avoid problems on the real import although a new gitlab issue will be created if the linked issue is not found.
+
+**ingnoreIssues** With this rules you can exclude issues from being imported to gitlab
+
+***closed*** {bool} Wether or not closed issues should be imported
+
+***date*** {bool} Wether or not issues created or updated before the given date in the `dateConfig` should be imported or not.
+
+***dateConfig*** *date* {string} The date string to match. Everything before the date will be ignored.
+***dateConfig*** *type* {string} `created` or `updated` The jira field to test against the defined date.
+
+## issueMapping
+
+Here you can define which jira issue field should be applied to which gitlab issue field. If a defined jira field is not present on an issue the mapping rule will be ignored for that issue.  
+There is a special `$asLabel` macro allowing you to import field values as gitlab labels. This works for array fields and even arrays of objects. Beyond that mapping rules using the `$asLabel` macro provide some more configuration options:
+
+**jira** {string} The jira issue field to map.
+
+**gitlab** {string} The gitlab issue field to apply to.
+
+**field** {string} (optional) When using the `$asLabel` macro on an issue field containing an array of objects you can define here the name of the attribute to use as label.
+
+**filter** {string[]} (optional) When using the `§asLabel` macro on a field containing an array you can define here a list of regex patterns. All labels matching one of the pattern will not be applied.
+
+**prefix** {string} (optional) Here you can define a prefix that will be attached to all labels imported through the mapping rule. Neat if you want to import a field containing a value that itself is not very meaningful.
