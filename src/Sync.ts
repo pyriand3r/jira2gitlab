@@ -373,8 +373,8 @@ export class Sync {
                                 } catch (e) {
                                     winston.error('ERROR: Applying of comment failed: ', e);
                                 }
+                                this.gitlabClient.removeHeader('SUDO');
                             }
-                            this.gitlabClient.removeHeader('SUDO');
                         }
 
                         if (this.options.general.syncField === true) {
