@@ -3,7 +3,7 @@ import * as gitlab from "node-gitlab";
 import * as _ from "underscore";
 import * as request from "request-promise";
 import * as path from 'path';
-import {execSync} from 'child_process';
+import { execSync } from 'child_process';
 import * as fs from 'fs';
 import * as winston from "winston";
 
@@ -16,7 +16,7 @@ export interface IssueMapping {
     field: string;
     filter: [
         string
-        ],
+    ],
     prefix: string;
 }
 
@@ -161,19 +161,19 @@ export class Sync {
 
             winston.info(`Getting gitlab project ${this.options.gitlab.namespace}/${this.options.gitlab.projectName}`);
             const gitlabProjectId: string = this.options.gitlab.namespace + "%2F" + this.options.gitlab.projectName;
-            this.gitlabProject = await this.gitlabClient.projects.get({id: gitlabProjectId});
+            this.gitlabProject = await this.gitlabClient.projects.get({ id: gitlabProjectId });
             if (this.gitlabProject === undefined)
                 throw new Error("Could not find gitlab project " + this.options.gitlab.namespace + "/" + this.options.gitlab.projectName);
             winston.debug(JSON.stringify(this.gitlabProject));
 
             winston.info(`Getting gitlab project members...`);
-            this.gitlabProjectMembers = await this.gitlabClient.projectMembers.list({id: this.gitlabProject.id});
+            this.gitlabProjectMembers = await this.gitlabClient.projectMembers.list({ id: this.gitlabProject.id });
 
             winston.info('Getting gitlab project shared groups members...');
             for (let i = 0; i < this.gitlabProject.shared_with_groups.length; i++) {
                 try {
                     const groupMembers = await request.get(this.options.gitlab.url + "/api/v3/groups/" + this.gitlabProject.shared_with_groups[i].group_id + "/members", {
-                        headers: {"PRIVATE-TOKEN": this.options.gitlab.privateToken},
+                        headers: { "PRIVATE-TOKEN": this.options.gitlab.privateToken },
                         json: true
                     });
                     this.gitlabProjectMembers = this.gitlabProjectMembers.concat(groupMembers);
@@ -185,7 +185,7 @@ export class Sync {
             winston.info(`Getting gitlab namespace members...`);
             try {
                 const gitlabGroupMembers = await request.get(this.options.gitlab.url + "/api/v3/groups/" + this.gitlabProject.namespace.id + "/members", {
-                    headers: {"PRIVATE-TOKEN": this.options.gitlab.privateToken},
+                    headers: { "PRIVATE-TOKEN": this.options.gitlab.privateToken },
                     json: true
                 });
                 this.gitlabProjectMembers = this.gitlabProjectMembers.concat(gitlabGroupMembers);
@@ -283,6 +283,43 @@ export class Sync {
                         gitlabIssueJSON.description = Sync.transformSyntax(gitlabIssueJSON.description);
                     }
 
+                    // adding backlink as comment
+                    if (this.options.general.backlink === true) {
+                        winston.info('  => Applying backlink to jira');
+                        gitlabIssueJSON.description = '### Backlink\n\nImported from jira. Original issue: ' + this.baseLink + '/browse/' + jiraIssue.key + '\n\n' +
+                        '### Description\n\n' + gitlabIssueJSON.description
+                    }
+
+                    // If there are attachments add  them all to description
+                    // Necessary if there are attachments not referenced in a comment
+                    if (attachments.length > 0) {
+                        winston.info('  => Adding attachments');
+                        let body = '### Attachments\n';
+
+                        for (let item in attachments) {
+                            if (attachments.hasOwnProperty(item)) {
+                                body += '\n' + attachments[item].markdown + '  ';
+                            }
+                        }
+                        gitlabIssueJSON.description += '\n' + body;
+                    }
+
+                    // Add time spent and estimated to description
+                    if (this.options.general.worklog === true || this.options.general.estimatedTime === true) {
+                        if (typeof issue.fields.timespent === "number"
+                            && issue.fields.timespent > 0
+                            && this.options.general.worklog === true) {
+                            winston.info("adding worklog: " + issue.fields.timespent);
+                            gitlabIssueJSON.description += '\n/spend ' + issue.fields.timespent + 's';
+                        }
+                        if (typeof issue.fields.timeestimate === 'number'
+                            && issue.fields.timeestimate > 0
+                            && this.options.general.estimatedTime === true) {
+                            winston.info('adding estimated time: ' + issue.fields.timeestimate);
+                            gitlabIssueJSON.description += '\n/estimate ' + issue.fields.timeestimate + 's';
+                        }
+                    }
+
                     let gitlabIssue: any;
                     let createNewIssue: boolean = true;
 
@@ -309,46 +346,6 @@ export class Sync {
                         winston.debug(JSON.stringify(gitlabIssueJSON));
                         gitlabIssue = await this.gitlabClient.issues.create(gitlabIssueJSON);
                         this.gitlabClient.removeHeader('SUDO');
-                        // time spent and estimated
-                        if (this.options.general.worklog === true
-                            || this.options.general.estimatedTime === true) {
-                            this.applyTimeLog(jiraIssue, gitlabIssue);
-                        }
-                        // adding backlink as comment
-                        if (this.options.general.backlink === true) {
-                            winston.info('  => Applying backlink to jira');
-                            try {
-                                await this.gitlabClient.issues.createNote({
-                                    id: gitlabIssue.project_id,
-                                    issue_id: gitlabIssue.id,
-                                    body: 'Imported from jira. Original issue: ' + this.baseLink + '/browse/' + jiraIssue.key
-                                });
-                            } catch (e) {
-                                winston.error("ERROR: Adding of backlink as comment failed: ", e);
-                            }
-                        }
-
-                        // If there are attachments add a comment containing them all
-                        // Necessary if there are attachments not referenced in a comment
-                        if (attachments.length > 0) {
-                            winston.info('  => Adding comment with all attachments.');
-                            let body = 'Attachments applied from jira ticket:';
-
-                            for (let item in attachments) {
-                                if (attachments.hasOwnProperty(item)) {
-                                    body += '<br/>' + attachments[item].markdown;
-                                }
-                            }
-                            try {
-                                await this.gitlabClient.issues.createNote({
-                                    id: gitlabIssue.project_id,
-                                    issue_id: gitlabIssue.id,
-                                    body: body
-                                })
-                            } catch (err) {
-                                winston.error('ERROR: Attachment comment could not be set.', err)
-                            }
-                        }
 
                         // adding comments if needed
                         if (this.options.general.comments === true) {
@@ -379,7 +376,7 @@ export class Sync {
 
                         if (this.options.general.syncField === true) {
                             // updating jira issue with gitlab issueID
-                            const jiraUpdate: any = {fields: {}};
+                            const jiraUpdate: any = { fields: {} };
                             jiraUpdate.fields[this.gitlabJiraField.id] = "" + gitlabIssue.id;
                             winston.info("Updating jira issue with ", jiraUpdate);
                             try {
@@ -408,39 +405,6 @@ export class Sync {
             }
             resolve();
         });
-    }
-
-    /**
-     * @method
-     * Apply worklog and estimated time
-     *
-     * @param issue
-     * @param gitlabIssue
-     * @async
-     */
-    private async applyTimeLog(issue, gitlabIssue) {
-        let note = 'Apply time entries from jira.';
-        if (typeof issue.fields.timespent === "number"
-            && issue.fields.timespent > 0
-            && this.options.general.worklog === true) {
-            winston.info("adding worklog: " + issue.fields.timespent);
-            note += '\n/spend ' + issue.fields.timespent + 's';
-        }
-        if (typeof issue.fields.timeestimate === 'number'
-            && issue.fields.timeestimate > 0
-            && this.options.general.estimatedTime === true) {
-            winston.info('adding estimated time: ' + issue.fields.timeestimate);
-            note += '\n/estimate ' + issue.fields.timeestimate + 's';
-        }
-        try {
-            await this.gitlabClient.issues.createNote({
-                id: gitlabIssue.project_id,
-                issue_id: gitlabIssue.id,
-                body: note
-            });
-        } catch (e) {
-            winston.error("Adding worklog and/or estimated time failed : ", e);
-        }
     }
 
     /**
@@ -503,7 +467,7 @@ export class Sync {
             }
         }
 
-        newLabels.forEach(function(value) {
+        newLabels.forEach(function (value) {
             labels.add(value);
         });
 
@@ -524,7 +488,7 @@ export class Sync {
         let fieldArray = attribute.split('.');
         let object = issue;
         for (let i = 0; i < fieldArray.length; i++) {
-            if (object[fieldArray[i]] !== undefined && object[fieldArray[i]] !== null ) {
+            if (object[fieldArray[i]] !== undefined && object[fieldArray[i]] !== null) {
                 object = object[fieldArray[i]];
             } else {
                 winston.info("WARNING: skipping field mapping for '" + attribute + "' since it doesn't exist on jira issue...");
@@ -659,7 +623,7 @@ export class Sync {
             count--;
         }
 
-        while (count > 0) {}
+        while (count > 0) { }
 
         try {
             execSync('rm ' + tmpPath + '/*');
@@ -682,7 +646,7 @@ export class Sync {
     static replaceAttachmentLinks(comment, attachments) {
 
         // Return the link to the gitlab attachment
-        let replaceLinks = function(match, p1, p2) {
+        let replaceLinks = function (match, p1, p2) {
             let name = p2;
             if (p1 !== undefined) {
                 name = p1.replace('|thumbnail', '');
