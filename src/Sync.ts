@@ -279,15 +279,16 @@ export class Sync {
                     }
 
                     if ('description' in gitlabIssueJSON && gitlabIssueJSON.description !== null) {
-                        gitlabIssueJSON.description = Sync.replaceAttachmentLinks(gitlabIssueJSON.description, attachments);
+                        gitlabIssueJSON.description = Sync.replaceAttachmentNames(gitlabIssueJSON.description, attachments);
                         gitlabIssueJSON.description = Sync.transformSyntax(gitlabIssueJSON.description);
+                        gitlabIssueJSON.description = Sync.replaceAttachmentById(gitlabIssueJSON.description, attachments);
                     }
 
                     // adding backlink as comment
                     if (this.options.general.backlink === true) {
                         winston.info('  => Applying backlink to jira');
                         gitlabIssueJSON.description = '### Backlink\n\nImported from jira. Original issue: ' + this.baseLink + '/browse/' + jiraIssue.key + '\n\n' +
-                        '### Description\n\n' + gitlabIssueJSON.description
+                            '### Description\n\n' + gitlabIssueJSON.description
                     }
 
                     // If there are attachments add  them all to description
@@ -357,15 +358,15 @@ export class Sync {
                                     this.gitlabClient.addHeader('SUDO', author.username);
                                 }
 
-                                if (attachments.length > 0) {
-                                    comment.body = Sync.replaceAttachmentLinks(comment.body, attachments);
-                                }
+                                comment.body = Sync.replaceAttachmentNames(comment.body, attachments);
+                                comment.body = Sync.transformSyntax(comment.body);
+                                comment.body = Sync.replaceAttachmentById(comment.body, attachments)
 
                                 try {
                                     await this.gitlabClient.issues.createNote({
                                         id: gitlabIssue.project_id,
                                         issue_id: gitlabIssue.id,
-                                        body: Sync.transformSyntax(comment.body)
+                                        body: comment.body
                                     });
                                 } catch (e) {
                                     winston.error('ERROR: Applying of comment failed: ', e);
@@ -636,15 +637,13 @@ export class Sync {
     }
 
     /**
-     * @method replaceAttachmentLinks
-     * Replace all jira attachment links with the corresponding gitlab attachment links
-     *
-     * @param {string} comment The comment body
-     * @param {{}[]} attachments The array of attachments
-     * @returns {string}
+     * @method replaceAttachmentNames
+     * Replaces attachment names by a string + id to avoid descruction of name by syntax change regex
+     * 
+     * @param {string} text The text to replace to attachments in 
+     * @param [{}] attachments The attachments array 
      */
-    static replaceAttachmentLinks(comment, attachments) {
-
+    static replaceAttachmentNames(text, attachments) {
         // Return the link to the gitlab attachment
         let replaceLinks = function (match, p1, p2) {
             let name = p2;
@@ -653,7 +652,7 @@ export class Sync {
             }
             for (let i = 0; i < attachments.length; i++) {
                 if (attachments[i].name === name) {
-                    return attachments[i].markdown;
+                    return 'attachment' + i;
                 }
             }
             return name + '|unavailable'
@@ -661,10 +660,31 @@ export class Sync {
 
         //replace attachment links
         let reg = /!(.*?)!|\[\^(.*)]?]/g;
-        if (reg.test(comment)) {
-            comment = comment.replace(reg, replaceLinks);
+        if (reg.test(text)) {
+            text = text.replace(reg, replaceLinks);
         }
-        return comment;
+        return text;
+    }
+
+    /**
+     * @method replaceAttachmentById
+     * Replaces the attachment placeholder with the correct gitlab links
+     * 
+     * @param {string} text The text to search for the attachment placeholder in
+     * @param [{}] attachments The array of attachments
+     */
+    static replaceAttachmentById(text, attachments) {
+        // Return the link to the gitlab attachment
+        let replaceLinks = function (match, p1) {
+            return attachments[p1].markdown;
+        };
+
+        //replace attachment links
+        let reg = /attachment([0-9]+)/g;
+        if (reg.test(text)) {
+            text = text.replace(reg, replaceLinks);
+        }
+        return text;
     }
 
     /**
