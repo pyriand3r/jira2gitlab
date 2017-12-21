@@ -174,7 +174,7 @@ For testing purposes this value should be set to `false` to avoid problems on th
 
 ***date*** {bool} Wether or not issues created or updated before the given date in the `dateConfig` should be imported or not.
 
-***dateConfig*** *date* {string} The date string to match. Everything before the date will be ignored.
+***dateConfig*** *date* {string} The date string to match. Everything before the date will be ignored.  
 ***dateConfig*** *type* {string} `created` or `updated` The jira field to test against the defined date.
 
 ## issueMapping
