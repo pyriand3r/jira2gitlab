@@ -3,7 +3,7 @@ import * as gitlab from "node-gitlab";
 import * as _ from "underscore";
 import * as request from "request-promise";
 import * as path from 'path';
-import { execSync } from 'child_process';
+import {execSync} from 'child_process';
 import * as fs from 'fs';
 import * as winston from "winston";
 
@@ -16,8 +16,9 @@ export interface IssueMapping {
     field: string;
     filter: [
         string
-    ],
+        ]
     prefix: string;
+    lowercase: boolean;
 }
 
 /**
@@ -161,19 +162,19 @@ export class Sync {
 
             winston.info(`Getting gitlab project ${this.options.gitlab.namespace}/${this.options.gitlab.projectName}`);
             const gitlabProjectId: string = this.options.gitlab.namespace + "%2F" + this.options.gitlab.projectName;
-            this.gitlabProject = await this.gitlabClient.projects.get({ id: gitlabProjectId });
+            this.gitlabProject = await this.gitlabClient.projects.get({id: gitlabProjectId});
             if (this.gitlabProject === undefined)
                 throw new Error("Could not find gitlab project " + this.options.gitlab.namespace + "/" + this.options.gitlab.projectName);
             winston.debug(JSON.stringify(this.gitlabProject));
 
             winston.info(`Getting gitlab project members...`);
-            this.gitlabProjectMembers = await this.gitlabClient.projectMembers.list({ id: this.gitlabProject.id });
+            this.gitlabProjectMembers = await this.gitlabClient.projectMembers.list({id: this.gitlabProject.id});
 
             winston.info('Getting gitlab project shared groups members...');
             for (let i = 0; i < this.gitlabProject.shared_with_groups.length; i++) {
                 try {
                     const groupMembers = await request.get(this.options.gitlab.url + "/api/v3/groups/" + this.gitlabProject.shared_with_groups[i].group_id + "/members", {
-                        headers: { "PRIVATE-TOKEN": this.options.gitlab.privateToken },
+                        headers: {"PRIVATE-TOKEN": this.options.gitlab.privateToken},
                         json: true
                     });
                     this.gitlabProjectMembers = this.gitlabProjectMembers.concat(groupMembers);
@@ -185,7 +186,7 @@ export class Sync {
             winston.info(`Getting gitlab namespace members...`);
             try {
                 const gitlabGroupMembers = await request.get(this.options.gitlab.url + "/api/v3/groups/" + this.gitlabProject.namespace.id + "/members", {
-                    headers: { "PRIVATE-TOKEN": this.options.gitlab.privateToken },
+                    headers: {"PRIVATE-TOKEN": this.options.gitlab.privateToken},
                     json: true
                 });
                 this.gitlabProjectMembers = this.gitlabProjectMembers.concat(gitlabGroupMembers);
@@ -360,7 +361,7 @@ export class Sync {
 
                                 comment.body = Sync.replaceAttachmentNames(comment.body, attachments);
                                 comment.body = Sync.transformSyntax(comment.body);
-                                comment.body = Sync.replaceAttachmentById(comment.body, attachments)
+                                comment.body = Sync.replaceAttachmentById(comment.body, attachments);
 
                                 try {
                                     await this.gitlabClient.issues.createNote({
@@ -377,7 +378,7 @@ export class Sync {
 
                         if (this.options.general.syncField === true) {
                             // updating jira issue with gitlab issueID
-                            const jiraUpdate: any = { fields: {} };
+                            const jiraUpdate: any = {fields: {}};
                             jiraUpdate.fields[this.gitlabJiraField.id] = "" + gitlabIssue.id;
                             winston.info("Updating jira issue with ", jiraUpdate);
                             try {
@@ -469,6 +470,9 @@ export class Sync {
         }
 
         newLabels.forEach(function (value) {
+            if (issueMapping.lowercase === true) {
+                value = value.toLowerCase();
+            }
             labels.add(value);
         });
 
@@ -639,9 +643,9 @@ export class Sync {
     /**
      * @method replaceAttachmentNames
      * Replaces attachment names by a string + id to avoid descruction of name by syntax change regex
-     * 
-     * @param {string} text The text to replace to attachments in 
-     * @param [{}] attachments The attachments array 
+     *
+     * @param {string} text The text to replace to attachments in
+     * @param {} attachments The attachments array
      */
     static replaceAttachmentNames(text, attachments) {
         // Return the link to the gitlab attachment
@@ -669,9 +673,9 @@ export class Sync {
     /**
      * @method replaceAttachmentById
      * Replaces the attachment placeholder with the correct gitlab links
-     * 
+     *
      * @param {string} text The text to search for the attachment placeholder in
-     * @param [{}] attachments The array of attachments
+     * @param {} attachments The array of attachments
      */
     static replaceAttachmentById(text, attachments) {
         // Return the link to the gitlab attachment
@@ -701,7 +705,7 @@ export class Sync {
             .replace(/\/([^\s].*?[^\s])\//g, '_$1_')
             .replace(/-([^\s].*?[^\s])-/g, '~~$1~~')
             .replace(/\+([^\s].*?[^\s])\+/g, '$1')
-            .replace(/\[~(.*?)\]/g, '@$1')
+            .replace(/\[~(.*?)]/g, '@$1')
             .replace(/{code:(.*?)}([\s\S]*?){code}/g, '```$1\n$2\n```')
             .replace(/{color:.*?}([^\s].*?[^\s]){color}/g, '$1');
         return text;
