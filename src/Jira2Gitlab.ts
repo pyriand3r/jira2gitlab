@@ -11,8 +11,9 @@ export async function CLI() {
         throw new Error("File does not exist: " + configFilePath);
     const configuration: any = fs.readJsonSync(configFilePath);
 
+    // configure logger
     let transports = [
-        new (winston.transports.Console)({ level: configuration.logger.level })
+        new (winston.transports.Console)({level: configuration.logger.level})
     ];
 
     if (configuration.logger.toFile === true && configuration.logger.file !== undefined) {
@@ -26,17 +27,43 @@ export async function CLI() {
         transports: transports
     });
 
-    // parse arguments
+    //process program
+    let projectMapping = [];
+
     process.argv.splice(0, 2);
     _.each(process.argv, function (arg) {
         if (arg === "--simulate") {
             configuration.simulation = true;
             winston.info("=> Simulating all actions!!!")
+        } else if (arg.includes('--projectmap=')) {
+            winston.info("=> Using file for project mappings");
+            let path = arg.split('=')[1];
+            projectMapping = require(path);
         }
     });
 
-    await new Sync(configuration).doTheDance().catch((error: Error) => {
-        winston.error("Error: " + error);
-        winston.error(error.stack);
-    });
+    let run = async function () {
+        await new Sync(configuration).doTheDance().catch((error: Error) => {
+            winston.error("Error: " + error);
+            winston.error(error.stack);
+        })
+    };
+
+    if (projectMapping.length > 0) {
+        for (let i = 0; i < projectMapping.length; i++) {
+            configuration.jira.projectKey = projectMapping[i].jiraProject;
+            configuration.gitlab.namespace = projectMapping[i].gitlabNamespace;
+            configuration.gitlab.projectName = projectMapping[i].gitlabProject;
+
+            run().catch((error: Error) => {
+                winston.error("Error: " + error);
+                winston.error(error.stack);
+            });
+        }
+    } else {
+        run().catch((error: Error) => {
+            winston.error("Error: " + error);
+            winston.error(error.stack);
+        });
+    }
 }

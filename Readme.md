@@ -191,3 +191,32 @@ There is a special `$asLabel` macro allowing you to import field values as gitla
 **filter** {string[]} (optional) When using the `§asLabel` macro on a field containing an array you can define here a list of regex patterns. All labels matching one of the pattern will not be applied.
 
 **prefix** {string} (optional) Here you can define a prefix that will be attached to all labels imported through the mapping rule. Neat if you want to import a field containing a value that itself is not very meaningful.
+
+**lowercase** {bool} (optional) When set to true all created labels are lowercased.
+
+## Use a project mapping file
+
+If you want to transfer multiple projects to gitlab, you can specify a project mapping file. It is a json file containing an array of project mappings:
+
+```json
+[
+    {
+        "jiraProject": "CUPPY",
+        "gitlabNamespace": "example",
+        "gitlabProject": "cuppy"
+    },
+    {
+        "jiraProject": "ANOTHER",
+        "gitlabNamespace": "example",
+        "gitlabProject": "another"
+    },
+]
+```
+
+You can specify the file with the `--projectMapping` start parameter:
+
+```bash
+jira2gitlab --projectMapping=/path/to/mappingFile.json
+```
+
+The path is either the full path or relative to the location of the `jira2gitlab` execution file.
